@@ -76,8 +76,8 @@ const connect = ((path) => {
     read: async (pn, buffer, size = buffer.length) => {
       // case: last page was not full.
       size === buffer.length
-        ? assert(buffer.length % PAGE_SIZE === 0)
-        : assert(size % ROW_SIZE === 0)
+        ? assert(buffer.length % PAGE_SIZE === 0, `buffer length ${buffer.length}`)
+        : assert(size % ROW_SIZE === 0, `size ${size}`)
 
       const r = await fd.read(buffer, 0, size, pn * PAGE_SIZE)
 
@@ -86,8 +86,8 @@ const connect = ((path) => {
     write: async (pn, buffer, size = buffer.length) => {
       // case: last page was not full.
       size === buffer.length
-        ? assert(buffer.length % PAGE_SIZE === 0)
-        : assert(size % ROW_SIZE === 0)
+        ? assert(buffer.length % PAGE_SIZE === 0, `buffer length ${buffer.length}`)
+        : assert(size % ROW_SIZE === 0, `size ${size}`)
 
       const r = await fd.write(buffer, 0, size, pn * PAGE_SIZE)
 
@@ -121,16 +121,66 @@ const connect = ((path) => {
     }
   }
 
-  const pager = {
-    pages: [],
-    slot(rn) {
-      return row_slot(this.pages, rn)
+  const table_open = async (db) => {
+    const pager = {
+      pages: [],
+      slot(rn) {
+        return row_slot(this.pages, rn)
+      }
+    }
+
+    const table = {
+      num_rows: 0,
+      pager,
+    }
+
+    const stat = await db.stat()
+    
+    // initialize table rows count
+    table.num_rows = Math.floor(stat.size / PAGE_SIZE) * ROWS_PER_PAGE + (stat.size % PAGE_SIZE) / ROW_SIZE
+
+    return table
+  }
+
+  const create_cursor = (table, end) => {
+    return {
+      table,
+      row_num: end ? table.num_rows : 0,
+      end_of_table: end || table.num_rows === 0,
+      value() {
+        return table.pager.slot(this.row_num)
+      },
+      advance() {
+        if (this.end_of_table) {
+          return this
+        }
+    
+        this.row_num++
+    
+        if (this.row_num === this.table.num_rows) {
+          this.end_of_table = true
+        }
+    
+        return this
+      },
+      back() {
+        if (this.row_num === 0) {
+          return this
+        }
+    
+        this.row_num--
+
+        return this
+      }
     }
   }
 
-  const table = {
-    num_rows: 0,
-    pager,
+  const table_start = (table) => {
+    return create_cursor(table, false)
+  }
+
+  const table_end = (table) => {
+    return create_cursor(table, true)
   }
 
   const interface = rl.createInterface({
@@ -144,30 +194,33 @@ const connect = ((path) => {
 
   await db.open()
 
-  const stat = await db.stat()
-
-  // initialize table rows count
-  table.num_rows = Math.floor(stat.size / PAGE_SIZE) * ROWS_PER_PAGE + (stat.size % PAGE_SIZE) / ROW_SIZE
+  const table = await table_open(db)
 
   interface.on('line', async line => {
     interface.write('> ')
 
     if (line.includes('select')) {
+      const cursor = table_start(table)
+
       // optimize: read by page and then by tail rows
-      for (let i = 0; i < table.num_rows; i++) {
-        const { pn, offset, buffer } = table.pager.slot(i)
+      while (!cursor.end_of_table) {
+        const { pn, offset, buffer } = cursor.value()
 
         console.log('read', pn, offset, buffer)
 
-        await db.read(pn, buffer, (i + 1) % ROWS_PER_PAGE === 0 ? undefined : ((i + 1) % ROWS_PER_PAGE) * ROW_SIZE)
+        await db.read(pn, buffer, ((cursor.row_num + 1) % ROWS_PER_PAGE) * ROW_SIZE)
 
         const row = deserialize(buffer.slice(offset, offset + ROW_SIZE))
 
         console.log(row)
+
+        cursor.advance()
       }
     }
 
     if (line.includes('insert')) {
+      const cursor = table_end(table)
+
       /*
       column	type
       id	integer
@@ -175,10 +228,9 @@ const connect = ((path) => {
       email	varchar(255)
       */
      const [, id, username, email]  = line.match(/insert\s+(\d+)\s+(\w+)\s+(.*)/)
-     const i = table.num_rows
 
       const row = serialize({ id, username, email })
-      const { pn, offset, buffer } = table.pager.slot(i)
+      const { pn, offset, buffer } = cursor.value()
 
       console.log('write', pn, offset, buffer)
 
@@ -189,7 +241,7 @@ const connect = ((path) => {
        * */
       buffer.set(row, offset)
 
-      await db.write(pn, buffer, (i + 1) % ROWS_PER_PAGE === 0 ? undefined : ((i + 1) % ROWS_PER_PAGE) * ROW_SIZE)
+      await db.write(pn, buffer, ((cursor.row_num + 1) % ROWS_PER_PAGE) * ROW_SIZE)
 
       table.num_rows += 1
     }
