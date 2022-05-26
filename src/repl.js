@@ -67,19 +67,25 @@ const connect = ((path) => {
     stat: async () => {
       return await fd.stat()
     },
-    read: async (pn, buffer) => {
-      assert(buffer.length % PAGE_SIZE === 0)
+    read: async (pn, buffer, size = buffer.length) => {
+      // case: last page was not full.
+      size === buffer.length
+        ? assert(buffer.length % PAGE_SIZE === 0)
+        : assert(size % ROW_SIZE === 0)
 
-      const r = await fd.read(buffer, 0, buffer.length, pn * PAGE_SIZE)
+      const r = await fd.read(buffer, 0, size, pn * PAGE_SIZE)
 
-      assert(r.bytesRead === buffer.length, `read ${r.bytesRead} bytes`)
+      assert(r.bytesRead === size, `read ${r.bytesRead} bytes`)
     },
-    write: async (pn, buffer) => {
-      assert(buffer.length % PAGE_SIZE === 0)
+    write: async (pn, buffer, size = buffer.length) => {
+      // case: last page was not full.
+      size === buffer.length
+        ? assert(buffer.length % PAGE_SIZE === 0)
+        : assert(size % ROW_SIZE === 0)
 
-      const r = await fd.write(buffer, 0, buffer.length, pn * PAGE_SIZE)
+      const r = await fd.write(buffer, 0, size, pn * PAGE_SIZE)
 
-      assert(r.bytesWritten === buffer.length, `wrote ${r.bytesWritten} bytes`)
+      assert(r.bytesWritten === size, `wrote ${r.bytesWritten} bytes`)
     },
     close: async () => {
       await fd.sync()
@@ -94,24 +100,31 @@ const connect = ((path) => {
 ;(async () => {
   const rl = require('readline')
 
-  const table = {
-    num_rows: 1, /* todo: initialize */
-    pages: [],
-  }
+  const row_slot = (/* mutable */ pages, /* row number */ rn) => {
+    const pn = Math.floor(rn / ROWS_PER_PAGE)
+    const offset = (rn % ROWS_PER_PAGE) * ROW_SIZE
 
-  const row_slot = (tbl, row_num) => {
-    const pn = Math.floor(row_num / ROWS_PER_PAGE)
-    const offset = (row_num % ROWS_PER_PAGE) * ROW_SIZE
-
-    if (!tbl.pages[pn]) {
-      tbl.pages[pn] = Buffer.alloc(PAGE_SIZE)
+    if (!pages[pn]) {
+      pages[pn] = Buffer.alloc(PAGE_SIZE)
     }
 
     return {
       pn,
       offset,
-      buffer: tbl.pages[pn],
+      buffer: pages[pn],
     }
+  }
+
+  const pager = {
+    pages: [],
+    slot(rn) {
+      return row_slot(this.pages, rn)
+    }
+  }
+
+  const table = {
+    num_rows: 0,
+    pager,
   }
 
   const interface = rl.createInterface({
@@ -127,18 +140,20 @@ const connect = ((path) => {
 
   const stat = await db.stat()
 
-  table.num_rows = Math.floor(stat.size / PAGE_SIZE) * ROWS_PER_PAGE
+  // initialize table rows count
+  table.num_rows = Math.floor(stat.size / PAGE_SIZE) * ROWS_PER_PAGE + (stat.size % PAGE_SIZE) / ROW_SIZE
 
   interface.on('line', async line => {
     interface.write('> ')
 
     if (line.includes('select')) {
+      // optimize: read by page and then by tail rows
       for (let i = 0; i < table.num_rows; i++) {
-        const { pn, offset, buffer } = row_slot(table, i)
+        const { pn, offset, buffer } = table.pager.slot(i)
 
         console.log('read', pn, buffer)
 
-        await db.read(pn, buffer)
+        await db.read(pn, buffer, (i + 1) % ROWS_PER_PAGE === 0 ? undefined : ((i + 1) % ROWS_PER_PAGE) * ROW_SIZE)
 
         const row = deserialize(buffer.slice(offset, offset + ROW_SIZE))
 
@@ -153,10 +168,11 @@ const connect = ((path) => {
       username	varchar(32)
       email	varchar(255)
       */
-      const [, id, username, email]  = line.match(/insert\s+(\d+)\s+(\w+)\s+(.*)/)
+     const [, id, username, email]  = line.match(/insert\s+(\d+)\s+(\w+)\s+(.*)/)
+     const i = table.num_rows
 
       const row = serialize({ id, username, email })
-      const { pn, offset, buffer } = row_slot(table, table.num_rows)
+      const { pn, offset, buffer } = table.pager.slot(i)
 
       console.log(row, row.length, row.toString())
 
@@ -169,7 +185,7 @@ const connect = ((path) => {
 
       console.log(buffer, buffer.toString())
 
-      await db.write(pn, buffer)
+      await db.write(pn, buffer, (i + 1) % ROWS_PER_PAGE === 0 ? undefined : ((i + 1) % ROWS_PER_PAGE) * ROW_SIZE)
 
       table.num_rows += 1
     }
@@ -180,9 +196,3 @@ const connect = ((path) => {
     }
   })
 })()
-
-/*
-insert 1 cstack foo@bar.com
-insert 2 voltorb volty@example.com
-
-*/
