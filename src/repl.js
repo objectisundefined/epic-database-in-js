@@ -24,11 +24,17 @@ const serialize = row => {
   return buffer
 }
 
+const int = buffer => buffer.readUInt8(0)
+
+const str = (buffer, encoding, start, end = buffer.length) => {
+  return buffer.slice(start, Math.min(buffer.indexOf('\x00', start), end)).toString(encoding)
+}
+
 const deserialize = buffer => {
   return {
-    id: buffer.readUInt8(0),
-    username: buffer.toString('utf8', 4, 36),
-    email: buffer.toString('utf8', 36, ROW_SIZE),
+    id: int(buffer),
+    username: str(buffer, 'utf8', 4, 36),
+    email: str(buffer, 'utf8', 36, ROW_SIZE),
   }
 }
 
@@ -151,7 +157,7 @@ const connect = ((path) => {
       for (let i = 0; i < table.num_rows; i++) {
         const { pn, offset, buffer } = table.pager.slot(i)
 
-        console.log('read', pn, buffer)
+        console.log('read', pn, offset, buffer)
 
         await db.read(pn, buffer, (i + 1) % ROWS_PER_PAGE === 0 ? undefined : ((i + 1) % ROWS_PER_PAGE) * ROW_SIZE)
 
@@ -174,7 +180,7 @@ const connect = ((path) => {
       const row = serialize({ id, username, email })
       const { pn, offset, buffer } = table.pager.slot(i)
 
-      console.log(row, row.length, row.toString())
+      console.log('write', pn, offset, buffer)
 
       /* // Copy `buf1` bytes 16 through 19 into `buf2` starting at byte 8 of `buf2`.
        * buf1.copy(buf2, 8, 16, 20);
@@ -182,8 +188,6 @@ const connect = ((path) => {
        * // buf2.set(buf1.subarray(16, 20), 8);
        * */
       buffer.set(row, offset)
-
-      console.log(buffer, buffer.toString())
 
       await db.write(pn, buffer, (i + 1) % ROWS_PER_PAGE === 0 ? undefined : ((i + 1) % ROWS_PER_PAGE) * ROW_SIZE)
 

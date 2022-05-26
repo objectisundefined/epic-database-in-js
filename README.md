@@ -16,6 +16,8 @@ insert 8 voltorb volty@example.com
 ```
 
 ```sh
-vim src/fake.db
+cp src/fake.db src/t.db
+vim src/t.db
 :%!xxd
+rm -rf src/t.db
 ```
