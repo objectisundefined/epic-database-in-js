@@ -14,6 +14,7 @@ const {
   leaf_node_num_cells,
   print_constants,
   print_leaf_node,
+  leaf_node_insert,
 } = require('./b+-tree')
 
 const serialize = row => {
@@ -52,7 +53,6 @@ const deserialize = buffer => {
   buffer.writeUint8(NodeType.NODE_LEAF, 0) /* node type */
   buffer.writeUint8(0, 1) /* is root */
   buffer.writeUint32LE(0, 2) /* parent pointer */
-  buffer.writeUInt32LE(num_cells, 6) /* *num_cells */
 
   for (let i = 0; i < num_cells; i++) {
     const row = {
@@ -61,8 +61,7 @@ const deserialize = buffer => {
       email: `user${i + 1}@qq.com`,
     }
 
-    leaf_node_key(buffer, i).write(i + 1)
-    leaf_node_value(buffer, i).write(serialize(row))
+    leaf_node_insert(buffer, i, row.id, serialize(row))
   }
 
   r = await fd.write(buffer, 0, PAGE_SIZE)

@@ -177,6 +177,51 @@ const initialize_leaf_node = buffer => {
   leaf_node_num_cells(buffer).write(0)
 }
 
+// void leaf_node_insert(Cursor* cursor, uint32_t key, Row* value) {
+//   void* node = get_page(cursor->table->pager, cursor->page_num);
+
+//   uint32_t num_cells = *leaf_node_num_cells(node);
+//   if (num_cells >= LEAF_NODE_MAX_CELLS) {
+//     // Node full
+//     printf("Need to implement splitting a leaf node.\n");
+//     exit(EXIT_FAILURE);
+//   }
+
+//   if (cursor->cell_num < num_cells) {
+//     // Make room for new cell
+//     for (uint32_t i = num_cells; i > cursor->cell_num; i--) {
+//       memcpy(leaf_node_cell(node, i), leaf_node_cell(node, i - 1),
+//              LEAF_NODE_CELL_SIZE);
+//     }
+//   }
+
+//   *(leaf_node_num_cells(node)) += 1;
+//   *(leaf_node_key(node, cursor->cell_num)) = key;
+//   serialize_row(value, leaf_node_value(node, cursor->cell_num));
+// }
+
+const leaf_node_insert = (buffer, cell_num, key, value) => {
+  const num_cells = leaf_node_num_cells(buffer).read();
+
+  if (num_cells >= LEAF_NODE_MAX_CELLS) {
+    // Node full
+    console.log('error: Need to implement splitting a leaf node.')
+
+    return
+  }
+
+  if (cell_num < num_cells) {
+    // Make room for new cell
+    for (let i = num_cells; i > cell_num; i--) {
+      leaf_node_cell(buffer, i).read().set(leaf_node_cell(buffer, i - 1).read())
+    }
+  }
+
+  leaf_node_num_cells(buffer).write(num_cells + 1)
+  leaf_node_key(buffer, cell_num).write(key)
+  leaf_node_value(buffer, cell_num).write(value)
+}
+
 module.exports = {
   ROW_SIZE,
   PAGE_SIZE,
@@ -189,4 +234,5 @@ module.exports = {
   print_constants,
   print_leaf_node,
   initialize_leaf_node,
+  leaf_node_insert,
 }

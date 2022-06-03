@@ -1,6 +1,6 @@
-const { promisify } = require('util')
-const path = require('path');
 const cp = require('child_process')
+const path = require('path');
+const { promisify } = require('util')
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -29,12 +29,12 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 
   await delay(200)
 
-  console.log('select')
+  // select
   await promisify(repl.stdin.write).bind(repl.stdin)(`select\n`)
 
   await delay(500)
 
-  console.log('exit')
+  // exit
   await promisify(repl.stdin.write).bind(repl.stdin)(`exit\n`)
 
   await delay(100)

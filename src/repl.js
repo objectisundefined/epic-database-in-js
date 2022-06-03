@@ -2,17 +2,7 @@ const path = require('path')
 const fs = require('fs/promises')
 
 const assert = require('assert')
-
-const ROW_SIZE =
-  4 + /* id	integer */
-  32 + /* username	varchar(32) */
-  255 /* email	varchar(255) */
-
-const PAGE_SIZE = 4096 /* 4kb */
-const ROWS_PER_PAGE = Math.floor(PAGE_SIZE / ROW_SIZE)
-
-// const TABLE_MAX_PAGES = 100
-// const TABLE_MAX_ROWS = TABLE_MAX_PAGES * ROW_SIZE
+const { ROW_SIZE, PAGE_SIZE, leaf_node_num_cells, leaf_node_cell, initialize_leaf_node, leaf_node_value, leaf_node_insert } = require('./b+-tree')
 
 const serialize = row => {
   const buffer = Buffer.alloc(ROW_SIZE)
@@ -106,69 +96,65 @@ const connect = ((path) => {
 ;(async () => {
   const rl = require('readline')
 
-  const row_slot = (/* mutable */ pages, /* row number */ rn) => {
-    const pn = Math.floor(rn / ROWS_PER_PAGE)
-    const offset = (rn % ROWS_PER_PAGE) * ROW_SIZE
-
-    if (!pages[pn]) {
-      pages[pn] = Buffer.alloc(PAGE_SIZE)
-    }
-
-    return {
-      pn,
-      offset,
-      buffer: pages[pn],
-    }
-  }
-
   const table_open = async (db) => {
     const pager = {
       pages: [],
-      slot(rn) {
-        return row_slot(this.pages, rn)
+      num_pages: 0,
+      page(pn) {
+        return this.pages[pn] || (this.pages[pn] = Buffer.alloc(PAGE_SIZE))
       }
     }
 
     const table = {
-      num_rows: 0,
+      root_page_num: 0,
       pager,
     }
 
     const stat = await db.stat()
-    
-    // initialize table rows count
-    table.num_rows = Math.floor(stat.size / PAGE_SIZE) * ROWS_PER_PAGE + (stat.size % PAGE_SIZE) / ROW_SIZE
+
+    assert(stat.size % PAGE_SIZE === 0, `size ${stat.size}`)
+
+    // initialize table pages count
+    table.num_pages = stat.size / PAGE_SIZE
+
+    if (table.num_pages === 0) {
+      const root = table.pager.page(0)
+      initialize_leaf_node(root, 0)
+    }
 
     return table
   }
 
   const create_cursor = (table, end) => {
+    const root = table.pager.page(table.root_page_num)
+    const num_cells = leaf_node_num_cells(root)
+
     return {
       table,
-      row_num: end ? table.num_rows : 0,
-      end_of_table: end || table.num_rows === 0,
-      value() {
-        return table.pager.slot(this.row_num)
+      page_num: table.root_page_num,
+      cell_num: end ? num_cells : 0,
+      end_of_table: end || num_cells === 0,
+      page() {
+        return table.pager.page(this.page_num)
+      },
+      cell() {
+        return leaf_node_cell(this.page(), this.cell_num)
       },
       advance() {
-        if (this.end_of_table) {
-          return this
+        if (!this.end_of_table) {
+          this.cell_num++
+    
+          if (this.cell_num === leaf_node_num_cells(this.page()).read()) {
+            this.end_of_table = true
+          }
         }
-    
-        this.row_num++
-    
-        if (this.row_num === this.table.num_rows) {
-          this.end_of_table = true
-        }
-    
+
         return this
       },
       back() {
-        if (this.row_num === 0) {
-          return this
+        if (this.cell_num > 0) {
+          this.cell_num--
         }
-    
-        this.row_num--
 
         return this
       }
@@ -204,13 +190,14 @@ const connect = ((path) => {
 
       // optimize: read by page and then by tail rows
       while (!cursor.end_of_table) {
-        const { pn, offset, buffer } = cursor.value()
+        const buffer = cursor.page()
+        const pn = cursor.page_num
 
-        await db.read(pn, buffer, ((cursor.row_num + 1) % ROWS_PER_PAGE) * ROW_SIZE)
+        await db.read(pn, buffer, PAGE_SIZE)
 
-        console.log('read', pn, offset, buffer.slice(offset, offset + ROW_SIZE))
+        console.log('read', pn, leaf_node_value(buffer, cursor.cell_num).read())
 
-        const row = deserialize(buffer.slice(offset, offset + ROW_SIZE))
+        const row = deserialize(leaf_node_value(buffer, cursor.cell_num).read())
 
         console.log(row)
 
@@ -220,6 +207,7 @@ const connect = ((path) => {
 
     if (line.includes('insert')) {
       const cursor = table_end(table)
+      const pn = cursor.page_num
 
       /*
       column	type
@@ -227,23 +215,16 @@ const connect = ((path) => {
       username	varchar(32)
       email	varchar(255)
       */
-     const [, id, username, email]  = line.match(/insert\s+(\d+)\s+(\w+)\s+(.*)/)
+      const [, id, username, email]  = line.match(/insert\s+(\d+)\s+(\w+)\s+(.*)/)
 
       const row = serialize({ id, username, email })
-      const { pn, offset, buffer } = cursor.value()
+      const buffer = cursor.page()
 
-      /* // Copy `buf1` bytes 16 through 19 into `buf2` starting at byte 8 of `buf2`.
-       * buf1.copy(buf2, 8, 16, 20);
-       * // This is equivalent to:
-       * // buf2.set(buf1.subarray(16, 20), 8);
-       * */
-      buffer.set(row, offset)
+      leaf_node_insert(buffer, cursor.cell_num, id, row)
 
-      console.log('write', pn, offset, buffer.slice(offset, offset + ROW_SIZE))
+      console.log('write', pn, leaf_node_value(buffer, cursor.cell_num).read())
 
-      await db.write(pn, buffer, ((cursor.row_num + 1) % ROWS_PER_PAGE) * ROW_SIZE)
-
-      table.num_rows += 1
+      await db.write(pn, buffer, PAGE_SIZE)
     }
 
     if (line.includes('exit')) {
