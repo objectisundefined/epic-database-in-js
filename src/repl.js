@@ -2,7 +2,7 @@ const path = require('path')
 const fs = require('fs/promises')
 
 const assert = require('assert')
-const { ROW_SIZE, PAGE_SIZE, leaf_node_num_cells, leaf_node_cell, initialize_leaf_node, leaf_node_value, leaf_node_insert } = require('./b+-tree')
+const { ROW_SIZE, PAGE_SIZE, leaf_node_num_cells, leaf_node_cell, initialize_leaf_node, leaf_node_value, leaf_node_insert, node_type, NodeType, leaf_node_find, leaf_node_key, print_constants, print_leaf_node } = require('./b+-tree')
 
 const serialize = row => {
   const buffer = Buffer.alloc(ROW_SIZE)
@@ -97,54 +97,72 @@ const connect = ((path) => {
   const rl = require('readline')
 
   const table_open = async (db) => {
+    const stat = await db.stat()
+
+    assert(stat.size % PAGE_SIZE === 0, `size ${stat.size}`)
+
     const pager = {
       pages: [],
-      num_pages: 0,
-      page(pn) {
-        return this.pages[pn] || (this.pages[pn] = Buffer.alloc(PAGE_SIZE))
+      num_pages: stat.size / PAGE_SIZE, // initialize table pages count
+      async page(pn) {
+        if (this.pages[pn] === undefined) {
+          this.pages[pn] = Buffer.alloc(PAGE_SIZE)
+          
+          pn < this.num_pages && await db.read(pn, this.pages[pn], PAGE_SIZE)
+        }
+
+        return this.pages[pn]
+      },
+      async flush(pn) {
+        await db.write(pn, this.pages[pn])
       }
     }
 
     const table = {
       root_page_num: 0,
       pager,
+      async find(key) {
+        const buffer = await this.pager.page(this.root_page_num)
+
+        if (node_type(buffer).read() === NodeType.NODE_LEAF) {
+          return table_pos(this, leaf_node_find(buffer, key) /* pos */)
+        } else {
+          throw Error('Need to implement searching an internal node')
+        }
+      }
     }
 
-    const stat = await db.stat()
-
-    assert(stat.size % PAGE_SIZE === 0, `size ${stat.size}`)
-
-    // initialize table pages count
-    table.num_pages = stat.size / PAGE_SIZE
-
-    if (table.num_pages === 0) {
-      const root = table.pager.page(0)
-      initialize_leaf_node(root, 0)
+    if (pager.num_pages === 0) {
+      // initialize root
+      initialize_leaf_node(await pager.page(0))
     }
 
     return table
   }
 
-  const create_cursor = (table, end) => {
-    const root = table.pager.page(table.root_page_num)
-    const num_cells = leaf_node_num_cells(root)
+  const create_cursor = async (table, end) => {
+    const root = await table.pager.page(table.root_page_num)
+    const num_cells = leaf_node_num_cells(root).read()
 
     return {
       table,
       page_num: table.root_page_num,
       cell_num: end ? num_cells : 0,
       end_of_table: end || num_cells === 0,
-      page() {
+      async page() {
         return table.pager.page(this.page_num)
       },
-      cell() {
-        return leaf_node_cell(this.page(), this.cell_num)
+      async flush() {
+        return table.pager.flush(this.page_num)
       },
-      advance() {
+      async cell() {
+        return leaf_node_cell(await this.page(), this.cell_num)
+      },
+      async advance() {
         if (!this.end_of_table) {
           this.cell_num++
     
-          if (this.cell_num === leaf_node_num_cells(this.page()).read()) {
+          if (this.cell_num === leaf_node_num_cells(await this.page()).read()) {
             this.end_of_table = true
           }
         }
@@ -161,12 +179,15 @@ const connect = ((path) => {
     }
   }
 
-  const table_start = (table) => {
+  const table_start = async (table) => {
     return create_cursor(table, false)
   }
 
-  const table_end = (table) => {
-    return create_cursor(table, true)
+  const table_pos = async (table, pos) => {
+    const cursor = await create_cursor(table, false)
+    cursor.cell_num = pos
+
+    return cursor
   }
 
   const interface = rl.createInterface({
@@ -186,29 +207,25 @@ const connect = ((path) => {
     interface.write('> ')
 
     if (line.includes('select')) {
-      const cursor = table_start(table)
+      const cursor = await table_start(table)
+
+      print_leaf_node(await cursor.page())
 
       // optimize: read by page and then by tail rows
       while (!cursor.end_of_table) {
-        const buffer = cursor.page()
+        const buffer = await cursor.page()
         const pn = cursor.page_num
-
-        await db.read(pn, buffer, PAGE_SIZE)
-
-        console.log('read', pn, leaf_node_value(buffer, cursor.cell_num).read())
 
         const row = deserialize(leaf_node_value(buffer, cursor.cell_num).read())
 
+        console.log('read', pn, leaf_node_value(buffer, cursor.cell_num).read())
         console.log(row)
 
-        cursor.advance()
+        await cursor.advance()
       }
     }
 
     if (line.includes('insert')) {
-      const cursor = table_end(table)
-      const pn = cursor.page_num
-
       /*
       column	type
       id	integer
@@ -217,14 +234,30 @@ const connect = ((path) => {
       */
       const [, id, username, email]  = line.match(/insert\s+(\d+)\s+(\w+)\s+(.*)/)
 
-      const row = serialize({ id, username, email })
-      const buffer = cursor.page()
+      const cursor = await table.find(+id)
 
-      leaf_node_insert(buffer, cursor.cell_num, id, row)
+      const buffer = await cursor.page()
+      const pn = cursor.page_num
 
-      console.log('write', pn, leaf_node_value(buffer, cursor.cell_num).read())
+      if (cursor.cell_num < leaf_node_num_cells(buffer).read()) {
+        const key = leaf_node_key(buffer, cursor.cell_num).read()
 
-      await db.write(pn, buffer, PAGE_SIZE)
+        if (key === +id) {
+          throw Error('duplicate key')
+        }
+      }
+
+      const row = serialize({ id: +id, username, email })
+
+      leaf_node_insert(buffer, cursor.cell_num, +id, row)
+
+      console.log('write', pn, leaf_node_value(buffer, cursor.cell_num).read(), deserialize(leaf_node_value(buffer, cursor.cell_num).read()))
+
+      await cursor.flush()
+    }
+
+    if (line.includes('constants')) {
+      print_constants()
     }
 
     if (line.includes('exit')) {

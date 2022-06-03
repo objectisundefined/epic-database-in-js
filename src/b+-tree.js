@@ -174,6 +174,7 @@ const print_leaf_node = (buffer) => {
 // void initialize_leaf_node(void* node) { *leaf_node_num_cells(node) = 0; }
 
 const initialize_leaf_node = buffer => {
+  node_type(buffer).write(NodeType.NODE_LEAF)
   leaf_node_num_cells(buffer).write(0)
 }
 
@@ -205,9 +206,7 @@ const leaf_node_insert = (buffer, cell_num, key, value) => {
 
   if (num_cells >= LEAF_NODE_MAX_CELLS) {
     // Node full
-    console.log('error: Need to implement splitting a leaf node.')
-
-    return
+    throw Error('error: Need to implement splitting a leaf node.')
   }
 
   if (cell_num < num_cells) {
@@ -220,6 +219,77 @@ const leaf_node_insert = (buffer, cell_num, key, value) => {
   leaf_node_num_cells(buffer).write(num_cells + 1)
   leaf_node_key(buffer, cell_num).write(key)
   leaf_node_value(buffer, cell_num).write(value)
+}
+
+// Cursor* leaf_node_find(Table* table, uint32_t page_num, uint32_t key) {
+//   void* node = get_page(table->pager, page_num);
+//   uint32_t num_cells = *leaf_node_num_cells(node);
+
+//   Cursor* cursor = malloc(sizeof(Cursor));
+//   cursor->table = table;
+//   cursor->page_num = page_num;
+
+//   // Binary search
+//   uint32_t min_index = 0;
+//   uint32_t one_past_max_index = num_cells;
+//   while (one_past_max_index != min_index) {
+//     uint32_t index = (min_index + one_past_max_index) / 2;
+//     uint32_t key_at_index = *leaf_node_key(node, index);
+//     if (key == key_at_index) {
+//       cursor->cell_num = index;
+//       return cursor;
+//     }
+//     if (key < key_at_index) {
+//       one_past_max_index = index;
+//     } else {
+//       min_index = index + 1;
+//     }
+//   }
+
+//   cursor->cell_num = min_index;
+//   return cursor;
+// }
+
+const leaf_node_find = (buffer, key) => {
+  const num_cells = leaf_node_num_cells(buffer).read()
+
+  let i = 0
+  let j = num_cells - 1
+
+  // binary search to find the pos whose key is greater than or equal to the key
+  while (i <= j) {
+    const m = Math.floor((i + j) / 2)
+    const k = leaf_node_key(buffer, m).read()
+
+    if (key == k) {
+      return m
+    }
+
+    if (key < k) {
+      j = m - 1
+    } else {
+      i = m + 1
+    }
+  }
+
+  return i
+}
+
+// NodeType get_node_type(void* node) {
+//   uint8_t value = *((uint8_t*)(node + NODE_TYPE_OFFSET));
+//   return (NodeType)value;
+// }
+
+// void set_node_type(void* node, NodeType type) {
+//   uint8_t value = type;
+//   *((uint8_t*)(node + NODE_TYPE_OFFSET)) = value;
+// }
+
+const node_type = buffer => {
+  return {
+    read: () => buffer.readUInt8(NODE_TYPE_OFFSET),
+    write: (value) => buffer.writeUint8(value, NODE_TYPE_OFFSET),
+  }
 }
 
 module.exports = {
@@ -235,4 +305,6 @@ module.exports = {
   print_leaf_node,
   initialize_leaf_node,
   leaf_node_insert,
+  leaf_node_find,
+  node_type,
 }

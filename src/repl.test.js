@@ -15,6 +15,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
   }
 
   repl.stdout.on('data', console.log)
+  repl.stderr.on('data', console.error)
 
   repl.on('close', () => process.exit(0))
   repl.on('error', () => process.exit(1))
