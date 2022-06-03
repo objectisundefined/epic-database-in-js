@@ -1,7 +1,9 @@
 https://github.com/codecrafters-io/build-your-own-x#build-your-own-database
 
-[C] https://cstack.github.io/db_tutorial/parts/part13.html
-[C#] https://www.codeproject.com/Articles/1029838/Build-Your-Own-Database
+- [C] https://cstack.github.io/db_tutorial/parts/part13.html
+- [C#] https://www.codeproject.com/Articles/1029838/Build-Your-Own-Database
+- [BTree] https://www.jianshu.com/p/a267c785e122
+- [B+ Tree] https://www.guru99.com/introduction-b-plus-tree.html
 
 
 ```sh

@@ -4,11 +4,11 @@ const fs = require('fs/promises')
 const assert = require('assert')
 
 const ROW_SIZE =
-  8 + /* id	integer */
+  4 + /* id	integer */
   32 + /* username	varchar(32) */
   255 /* email	varchar(255) */
 
-const PAGE_SIZE = 1024 /* 1kb */
+const PAGE_SIZE = 4096 /* 4kb */
 const ROWS_PER_PAGE = Math.floor(PAGE_SIZE / ROW_SIZE)
 
 // const TABLE_MAX_PAGES = 100
@@ -17,14 +17,14 @@ const ROWS_PER_PAGE = Math.floor(PAGE_SIZE / ROW_SIZE)
 const serialize = row => {
   const buffer = Buffer.alloc(ROW_SIZE)
 
-  buffer.writeUInt8(row.id, 0)
+  buffer.writeUInt32LE(row.id, 0)
   buffer.write(row.username, 4, 32)
   buffer.write(row.email, 36, 255)
 
   return buffer
 }
 
-const int = buffer => buffer.readUInt8(0)
+const int = buffer => buffer.readUInt32LE(0)
 
 const str = (buffer, encoding, start, end = buffer.length) => {
   return buffer.slice(start, Math.min(buffer.indexOf('\x00', start), end)).toString(encoding)
@@ -206,9 +206,9 @@ const connect = ((path) => {
       while (!cursor.end_of_table) {
         const { pn, offset, buffer } = cursor.value()
 
-        console.log('read', pn, offset, buffer)
-
         await db.read(pn, buffer, ((cursor.row_num + 1) % ROWS_PER_PAGE) * ROW_SIZE)
+
+        console.log('read', pn, offset, buffer.slice(offset, offset + ROW_SIZE))
 
         const row = deserialize(buffer.slice(offset, offset + ROW_SIZE))
 
@@ -232,14 +232,14 @@ const connect = ((path) => {
       const row = serialize({ id, username, email })
       const { pn, offset, buffer } = cursor.value()
 
-      console.log('write', pn, offset, buffer)
-
       /* // Copy `buf1` bytes 16 through 19 into `buf2` starting at byte 8 of `buf2`.
        * buf1.copy(buf2, 8, 16, 20);
        * // This is equivalent to:
        * // buf2.set(buf1.subarray(16, 20), 8);
        * */
       buffer.set(row, offset)
+
+      console.log('write', pn, offset, buffer.slice(offset, offset + ROW_SIZE))
 
       await db.write(pn, buffer, ((cursor.row_num + 1) % ROWS_PER_PAGE) * ROW_SIZE)
 
