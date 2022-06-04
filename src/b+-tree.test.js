@@ -14,7 +14,10 @@ const {
   leaf_node_num_cells,
   print_constants,
   leaf_node_insert,
+  node_type,
   leaf_node_find,
+  internal_node_find,
+  print_tree,
 } = require('./b+-tree')
 
 const serialize = row => {
@@ -73,11 +76,20 @@ const deserialize = buffer => {
   const table = {
     root_page_num: 0,
     pager,
+    async find(key) {
+      const buffer = await this.pager.page(this.root_page_num)
+
+      if (node_type(buffer).read() === NodeType.NODE_LEAF) {
+        return leaf_node_find(buffer, this.root_page_num, key)
+      } else {
+        return await internal_node_find(buffer, key, pager)
+      }
+    },
   }
 
   initialize_leaf_node(await pager.page(0), 1)
 
-  const len = LEAF_NODE_MAX_CELLS + 1
+  const len = LEAF_NODE_MAX_CELLS * 2 - 1
 
   for (let i = 0; i < len; i++) {
     const row = {
@@ -86,9 +98,9 @@ const deserialize = buffer => {
       email: `user${i + 1}@qq.com`,
     }
 
-    const cell = leaf_node_find(await pager.page(table.root_page_num), i + 1)
+    const { pn, cell } = await table.find(i + 1)
 
-    await leaf_node_insert(await pager.page(0), cell, row.id, serialize(row), table)
+    await leaf_node_insert(await pager.page(pn), cell, row.id, serialize(row), table)
   }
 
   for (let i = 0; i < pager.num_pages; i++) {
@@ -121,14 +133,15 @@ const deserialize = buffer => {
   assert(root.readUInt32LE(18) === 2) /* child_key 0 */
 
   const buffer = pager.pages[1]
-  const j = 3
+  const j = LEAF_NODE_MAX_CELLS
 
   const num_cells_ = leaf_node_num_cells(buffer).read()
 
   assert(buffer.readUint8(0) === NodeType.NODE_LEAF) /* node type */
   assert(buffer.readUint8(1) === 0) /* is root */
   assert(buffer.readUint32LE(2) === 0) /* parent pointer */
-  assert(buffer.readUInt32LE(6) === 2) /* *num_cells */
+  assert(buffer.readUInt32LE(6) === 3) /* *num_cells */
+  assert(buffer.readUInt32LE(10) === 0) /* next_leaf */
 
   for (let i = 0; i < num_cells_; i++) {
     const k = leaf_node_key(buffer, i).read()
@@ -148,6 +161,8 @@ const deserialize = buffer => {
 
     assert.deepStrictEqual(leaf_node_cell(buffer, i).read(), Buffer.concat([kb, v]))
   }
+
+  await print_tree(table.pager, 0, 0)
 
   print_constants()
 

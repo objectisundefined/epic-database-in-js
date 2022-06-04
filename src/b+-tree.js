@@ -42,11 +42,15 @@ const COMMON_NODE_HEADER_SIZE = NODE_TYPE_SIZE + IS_ROOT_SIZE + PARENT_POINTER_S
  */
 // const uint32_t LEAF_NODE_NUM_CELLS_SIZE = sizeof(uint32_t);
 // const uint32_t LEAF_NODE_NUM_CELLS_OFFSET = COMMON_NODE_HEADER_SIZE;
-// const uint32_t LEAF_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE;
+// const uint32_t LEAF_NODE_NEXT_LEAF_SIZE = sizeof(uint32_t);
+// const uint32_t LEAF_NODE_NEXT_LEAF_OFFSET = LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_NUM_CELLS_SIZE;
+// const uint32_t LEAF_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE + LEAF_NODE_NEXT_LEAF_SIZE;
 
-const LEAF_NODE_NUM_CELLS_SIZE = 4 /* sizeof(uint32_t) */;
-const LEAF_NODE_NUM_CELLS_OFFSET = COMMON_NODE_HEADER_SIZE;
-const LEAF_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE;
+const LEAF_NODE_NUM_CELLS_SIZE = 4 /* sizeof(uint32_t) */
+const LEAF_NODE_NUM_CELLS_OFFSET = COMMON_NODE_HEADER_SIZE
+const LEAF_NODE_NEXT_LEAF_SIZE = 4 /* sizeof(uint32_t) */
+const LEAF_NODE_NEXT_LEAF_OFFSET = LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_NUM_CELLS_SIZE
+const LEAF_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE + LEAF_NODE_NEXT_LEAF_SIZE
 
 /*
  * Leaf Node Body Layout
@@ -75,6 +79,21 @@ const leaf_node_num_cells = buffer => {
   assert(buffer.length === PAGE_SIZE, `buffer.length: ${buffer.length}`)
 
   const offset = LEAF_NODE_NUM_CELLS_OFFSET
+
+  return {
+    read: () => buffer.readUInt32LE(offset),
+    write: (value) => buffer.writeUInt32LE(value, offset),
+  }
+}
+
+// uint32_t* leaf_node_next_leaf(void* node) {
+//   return node + LEAF_NODE_NEXT_LEAF_OFFSET;
+// }
+
+const leaf_node_next_leaf = buffer => {
+  assert(buffer.length === PAGE_SIZE, `buffer.length: ${buffer.length}`)
+
+  const offset = LEAF_NODE_NEXT_LEAF_OFFSET
 
   return {
     read: () => buffer.readUInt32LE(offset),
@@ -260,12 +279,14 @@ const print_tree = async (pager, page_num, indentation_level) => {
 //   set_node_type(node, NODE_LEAF);
 //   set_node_root(node, false);
 //   *leaf_node_num_cells(node) = 0;
+//   *leaf_node_next_leaf(node) = 0;
 // }
 
 const initialize_leaf_node = (buffer, root) => {
   node_type(buffer).write(NodeType.NODE_LEAF)
   node_root(buffer).write(root ? 1 : 0)
   leaf_node_num_cells(buffer).write(0)
+  leaf_node_next_leaf(buffer).write(0) // 0 represents no sibling
 }
 
 // void leaf_node_insert(Cursor* cursor, uint32_t key, Row* value) {
@@ -342,7 +363,7 @@ const leaf_node_insert = async (buffer, cell_num, key, value, table) => {
 //   return cursor;
 // }
 
-const leaf_node_find = (buffer, key) => {
+const leaf_node_find = (buffer, pn, key) => {
   const num_cells = leaf_node_num_cells(buffer).read()
 
   let i = 0
@@ -353,18 +374,17 @@ const leaf_node_find = (buffer, key) => {
     const m = Math.floor((i + j) / 2)
     const k = leaf_node_key(buffer, m).read()
 
-    if (key == k) {
-      return m
-    }
-
-    if (key < k) {
+    if (key === k) {
+      i = m
+      break
+    } else if (key < k) {
       j = m - 1
     } else {
       i = m + 1
     }
   }
 
-  return i
+  return { pn, cell: i }
 }
 
 // NodeType get_node_type(void* node) {
@@ -404,6 +424,8 @@ const LEAF_NODE_LEFT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) - LEAF_NODE_RIGHT_S
 //   uint32_t new_page_num = get_unused_page_num(cursor->table->pager);
 //   void* new_node = get_page(cursor->table->pager, new_page_num);
 //   initialize_leaf_node(new_node);
+//   leaf_node_next_leaf(new_node) = *leaf_node_next_leaf(old_node);
+//   leaf_node_next_leaf(old_node) = new_page_num;
 
 //   /*
 //   All existing keys plus new key should be divided
@@ -446,6 +468,8 @@ const leaf_node_split_and_insert = async (buffer, cell_num, key, value, table) =
   const new_page_num = get_unused_page_num(table.pager)
   const new_node = await table.pager.page(new_page_num)
   initialize_leaf_node(new_node)
+  leaf_node_next_leaf(new_node).write(leaf_node_next_leaf(old_node).read())
+  leaf_node_next_leaf(old_node).write(new_page_num)
 
   // All existing keys plus new key should be divided
   // evenly between old (left) and new (right) nodes.
@@ -750,7 +774,7 @@ const internal_node_find = async (buffer, key, pager) => {
 
   switch (node_type(node).read()) {
     case NodeType.NODE_LEAF:
-      return leaf_node_find(node, key, pager)
+      return leaf_node_find(node, child_num, key)
     case NodeType.NODE_INTERNAL:
       return internal_node_find(node, key, pager)
   }
@@ -762,6 +786,7 @@ module.exports = {
   NodeType,
   LEAF_NODE_MAX_CELLS,
   leaf_node_num_cells,
+  leaf_node_next_leaf,
   leaf_node_cell,
   leaf_node_key,
   leaf_node_value,

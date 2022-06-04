@@ -2,7 +2,7 @@ const path = require('path')
 const fs = require('fs/promises')
 
 const assert = require('assert')
-const { ROW_SIZE, PAGE_SIZE, leaf_node_num_cells, leaf_node_cell, initialize_leaf_node, leaf_node_value, leaf_node_insert, node_type, NodeType, leaf_node_find, leaf_node_key, print_constants, print_tree, internal_node_find } = require('./b+-tree')
+const { ROW_SIZE, PAGE_SIZE, leaf_node_num_cells, leaf_node_cell, initialize_leaf_node, leaf_node_value, leaf_node_insert, node_type, NodeType, leaf_node_find, leaf_node_key, print_constants, print_tree, internal_node_find, leaf_node_next_leaf } = require('./b+-tree')
 
 const serialize = row => {
   const buffer = Buffer.alloc(ROW_SIZE)
@@ -133,10 +133,11 @@ const connect = ((path) => {
         const buffer = await this.pager.page(this.root_page_num)
 
         if (node_type(buffer).read() === NodeType.NODE_LEAF) {
-          return table_pos(this, leaf_node_find(buffer, key) /* pos */)
+          const { pn, cell } = leaf_node_find(buffer, this.root_page_num, key)
+          return table_pos(this, pn, cell)
         } else {
-          // throw Error('Need to implement searching an internal node')
-          return table_pos(this, await internal_node_find(buffer, key, pager))
+          const { pn, cell } = await internal_node_find(buffer, key, pager)
+          return table_pos(this, pn, cell)
         }
       },
       async close() {
@@ -160,13 +161,13 @@ const connect = ((path) => {
     return table
   }
 
-  const create_cursor = async (table, end) => {
-    const root = await table.pager.page(table.root_page_num)
-    const num_cells = leaf_node_num_cells(root).read()
+  const create_cursor = async (table, pn, end) => {
+    const buffer = await table.pager.page(pn)
+    const num_cells = leaf_node_num_cells(buffer).read()
 
     return {
       table,
-      page_num: table.root_page_num,
+      page_num: pn,
       cell_num: end ? num_cells : 0,
       end_of_table: end || num_cells === 0,
       async page() {
@@ -175,15 +176,21 @@ const connect = ((path) => {
       async flush() {
         return table.pager.flush(this.page_num)
       },
-      async cell() {
-        return leaf_node_cell(await this.page(), this.cell_num)
-      },
       async advance() {
-        if (!this.end_of_table) {
-          this.cell_num++
+        if (this.end_of_table) {
+          return
+        }
 
-          if (this.cell_num >= leaf_node_num_cells(await this.page()).read()) {
-            this.end_of_table = true
+        this.cell_num++
+
+        if (this.cell_num >= leaf_node_num_cells(await this.page()).read()) {
+          const next_page_num = leaf_node_next_leaf(await this.page()).read()
+
+          if (next_page_num === 0) {
+            this.end_of_table = true // This was rightmost leaf
+          } else {
+            this.page_num = next_page_num
+            this.cell_num = 0
           }
         }
 
@@ -193,11 +200,12 @@ const connect = ((path) => {
   }
 
   const table_start = async (table) => {
-    return create_cursor(table, false)
+    // read from the first leaf node page
+    return table.find(0)
   }
 
-  const table_pos = async (table, pos) => {
-    const cursor = await create_cursor(table, false)
+  const table_pos = async (table, pn, pos) => {
+    const cursor = await create_cursor(table, pn, false)
     cursor.cell_num = pos
 
     return cursor
@@ -243,10 +251,9 @@ const connect = ((path) => {
       */
       const [, id, username, email]  = line.match(/insert\s+(\d+)\s+(\w+)\s+(.*)/)
 
-      let cursor = await table.find(+id)
+      const cursor = await table.find(+id)
 
       const buffer = await cursor.page()
-      const pn = cursor.page_num
 
       if (cursor.cell_num < leaf_node_num_cells(buffer).read()) {
         const key = leaf_node_key(buffer, cursor.cell_num).read()
@@ -260,9 +267,11 @@ const connect = ((path) => {
 
       await leaf_node_insert(buffer, cursor.cell_num, +id, row, table)
 
-      // cursor = await table.find(+id)
-      console.log('write', cursor.page_num, leaf_node_value(await cursor.page(), cursor.cell_num).read(), deserialize(leaf_node_value(await cursor.page(), cursor.cell_num).read()))
-      await cursor.flush()
+      {
+        // read from inserted cell
+        const cursor = await table.find(+id)
+        console.log('write', cursor.page_num, leaf_node_value(await cursor.page(), cursor.cell_num).read(), deserialize(leaf_node_value(await cursor.page(), cursor.cell_num).read()))
+      }
     }
 
     if (line.includes('constants')) {

@@ -2,6 +2,8 @@ const cp = require('child_process')
 const path = require('path');
 const { promisify } = require('util')
 
+const { LEAF_NODE_MAX_CELLS } = require('./b+-tree')
+
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 ;(async () => {
@@ -20,7 +22,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
   repl.on('close', () => process.exit(0))
   repl.on('error', () => process.exit(1))
 
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 2 * LEAF_NODE_MAX_CELLS - 1; i++) {
     const row = struct(i + 1)
 
     await promisify(repl.stdin.write).bind(repl.stdin)(`insert ${row.id} ${row.username} ${row.email}\n`)
@@ -32,6 +34,16 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 
   // select
   await promisify(repl.stdin.write).bind(repl.stdin)(`select\n`)
+
+  await delay(500)
+
+  // btree
+  await promisify(repl.stdin.write).bind(repl.stdin)(`btree\n`)
+
+  await delay(500)
+
+  // constants
+  await promisify(repl.stdin.write).bind(repl.stdin)(`constants\n`)
 
   await delay(500)
 
