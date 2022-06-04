@@ -13,8 +13,8 @@ const {
   leaf_node_cell,
   leaf_node_num_cells,
   print_constants,
-  print_leaf_node,
   leaf_node_insert,
+  leaf_node_find,
 } = require('./b+-tree')
 
 const serialize = row => {
@@ -43,49 +43,92 @@ const deserialize = buffer => {
 
 ;(async () => {
   let fd = await fs.open(path.join(__dirname, './tree.db'), 'w+')
-  let buffer = Buffer.alloc(PAGE_SIZE)
-  let r
 
-  initialize_leaf_node(buffer)
+  const pager = {
+    pages: [],
+    num_pages: 0,
+    async page(pn) {
+      if (this.pages[pn] === undefined) {
+        this.pages[pn] = Buffer.alloc(PAGE_SIZE)
 
-  const num_cells = LEAF_NODE_MAX_CELLS
+        if (pn < this.num_pages) {
+          const r = await fd.read(this.pages[pn], 0, PAGE_SIZE, PAGE_SIZE * pn)
+          assert(r.bytesRead === PAGE_SIZE, `read ${r.bytesRead} bytes`)
+        }
+      }
 
-  buffer.writeUint8(NodeType.NODE_LEAF, 0) /* node type */
-  buffer.writeUint8(0, 1) /* is root */
-  buffer.writeUint32LE(0, 2) /* parent pointer */
+      if (pn >= this.num_pages) {
+        this.num_pages = pn + 1
+      }
 
-  for (let i = 0; i < num_cells; i++) {
+      return this.pages[pn]
+    },
+    async flush(pn) {
+      const r = await fd.write(this.pages[pn], 0, PAGE_SIZE, PAGE_SIZE * pn)
+
+      assert(r.bytesWritten === PAGE_SIZE, `wrote ${r.bytesWritten} bytes`)
+    }
+  }
+
+  const table = {
+    root_page_num: 0,
+    pager,
+  }
+
+  initialize_leaf_node(await pager.page(0), 1)
+
+  const len = LEAF_NODE_MAX_CELLS + 1
+
+  for (let i = 0; i < len; i++) {
     const row = {
       id: i + 1,
       username: `user${i + 1}`,
       email: `user${i + 1}@qq.com`,
     }
 
-    leaf_node_insert(buffer, i, row.id, serialize(row))
+    const cell = leaf_node_find(await pager.page(table.root_page_num), i + 1)
+
+    await leaf_node_insert(await pager.page(0), cell, row.id, serialize(row), table)
   }
 
-  r = await fd.write(buffer, 0, PAGE_SIZE)
+  for (let i = 0; i < pager.num_pages; i++) {
+    await pager.flush(i)
 
-  assert(r.bytesWritten === PAGE_SIZE, `wrote ${r.bytesWritten} bytes`)
+    console.log('write', [...pager.pages[i].slice(0, 50)])
+  }
 
   await fd.sync()
   await fd.close()
 
   fd = await fs.open(path.join(__dirname, './tree.db'), 'r+')
-  buffer = Buffer.alloc(PAGE_SIZE)
 
-  r = await fd.read(buffer, 0, PAGE_SIZE, 0)
+  pager.pages = []
 
-  assert(r.bytesRead === PAGE_SIZE, `read ${r.bytesRead} bytes`)
+  for (let i = 0; i < pager.num_pages; i++) {
+    await pager.page(i)
+
+    console.log('read', [...pager.pages[i].slice(0, 50)])
+  }
+
+  const root = pager.pages[table.root_page_num]
+
+  assert(root.readUint8(0) === NodeType.NODE_INTERNAL) /* node type */
+  assert(root.readUint8(1) === 1) /* is root */
+  assert(root.readUint32LE(2) === 0) /* parent pointer */
+  assert(root.readUInt32LE(6) === 1) /* *num_keys */
+  assert(root.readUInt32LE(10) === 1) /* right_child_pointer */
+  assert(root.readUInt32LE(14) === 2) /* child_pointer 0 */
+  assert(root.readUInt32LE(18) === 2) /* child_key 0 */
+
+  const buffer = pager.pages[1]
+  const j = 3
 
   const num_cells_ = leaf_node_num_cells(buffer).read()
 
   assert(buffer.readUint8(0) === NodeType.NODE_LEAF) /* node type */
   assert(buffer.readUint8(1) === 0) /* is root */
   assert(buffer.readUint32LE(2) === 0) /* parent pointer */
-  assert(buffer.readUInt32LE(6) === num_cells) /* *num_cells */
-
-  assert(num_cells_ === num_cells, `num_cells: ${num_cells_}`)
+  assert(buffer.readUInt32LE(6) === 2) /* *num_cells */
 
   for (let i = 0; i < num_cells_; i++) {
     const k = leaf_node_key(buffer, i).read()
@@ -93,10 +136,12 @@ const deserialize = buffer => {
 
     const row = deserialize(v)
 
-    assert(k === i + 1, `key ${k} is id ${k}`)
-    assert(row.id === i + 1, `value ${row.id} is id ${i + 1}`)
-    assert(row.username === `user${i + 1}`, `value ${row.username} is id user${i + 1}`)
-    assert(row.email === `user${i + 1}@qq.com`, `value ${row.email} is id user${i + 1}@qq.com`)
+    console.log(row)
+
+    assert(k === i + j, `key ${k} is id ${i + j}`)
+    assert(row.id === i + j, `value ${row.id} is id ${i + j}`)
+    assert(row.username === `user${i + j}`, `value ${row.username} is id user${i + j}`)
+    assert(row.email === `user${i + j}@qq.com`, `value ${row.email} is id user${i + j}@qq.com`)
 
     const kb = Buffer.alloc(4) /* uint32_t */
     kb.writeUint32LE(k, 0)
@@ -105,7 +150,6 @@ const deserialize = buffer => {
   }
 
   print_constants()
-  print_leaf_node(buffer)
 
   await fd.close()
 

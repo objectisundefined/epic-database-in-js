@@ -2,7 +2,7 @@ const path = require('path')
 const fs = require('fs/promises')
 
 const assert = require('assert')
-const { ROW_SIZE, PAGE_SIZE, leaf_node_num_cells, leaf_node_cell, initialize_leaf_node, leaf_node_value, leaf_node_insert, node_type, NodeType, leaf_node_find, leaf_node_key, print_constants, print_leaf_node } = require('./b+-tree')
+const { ROW_SIZE, PAGE_SIZE, leaf_node_num_cells, leaf_node_cell, initialize_leaf_node, leaf_node_value, leaf_node_insert, node_type, NodeType, leaf_node_find, leaf_node_key, print_constants, print_tree } = require('./b+-tree')
 
 const serialize = row => {
   const buffer = Buffer.alloc(ROW_SIZE)
@@ -97,6 +97,8 @@ const connect = ((path) => {
   const rl = require('readline')
 
   const table_open = async (db) => {
+    await db.open()
+
     const stat = await db.stat()
 
     assert(stat.size % PAGE_SIZE === 0, `size ${stat.size}`)
@@ -107,8 +109,14 @@ const connect = ((path) => {
       async page(pn) {
         if (this.pages[pn] === undefined) {
           this.pages[pn] = Buffer.alloc(PAGE_SIZE)
-          
-          pn < this.num_pages && await db.read(pn, this.pages[pn], PAGE_SIZE)
+
+          if (pn < stat.size / PAGE_SIZE) {
+            await db.read(pn, this.pages[pn], PAGE_SIZE)
+          }
+        }
+
+        if (pn >= this.num_pages) {
+          this.num_pages = pn + 1
         }
 
         return this.pages[pn]
@@ -129,12 +137,23 @@ const connect = ((path) => {
         } else {
           throw Error('Need to implement searching an internal node')
         }
+      },
+      async close() {
+        for (let i = 0; i < table.pager.num_pages; i++) {
+          if (table.pager.pages[i] === undefined) {
+            continue
+          }
+
+          await table.pager.flush(i)
+        }
+
+        await db.close()
       }
     }
 
     if (pager.num_pages === 0) {
       // initialize root
-      initialize_leaf_node(await pager.page(0))
+      initialize_leaf_node(await pager.page(0), true /* root */)
     }
 
     return table
@@ -161,21 +180,14 @@ const connect = ((path) => {
       async advance() {
         if (!this.end_of_table) {
           this.cell_num++
-    
-          if (this.cell_num === leaf_node_num_cells(await this.page()).read()) {
+
+          if (this.cell_num >= leaf_node_num_cells(await this.page()).read()) {
             this.end_of_table = true
           }
         }
 
         return this
       },
-      back() {
-        if (this.cell_num > 0) {
-          this.cell_num--
-        }
-
-        return this
-      }
     }
   }
 
@@ -199,8 +211,6 @@ const connect = ((path) => {
 
   const db = connect(path.join(__dirname, './fake.db'))
 
-  await db.open()
-
   const table = await table_open(db)
 
   interface.on('line', async line => {
@@ -208,8 +218,6 @@ const connect = ((path) => {
 
     if (line.includes('select')) {
       const cursor = await table_start(table)
-
-      print_leaf_node(await cursor.page())
 
       // optimize: read by page and then by tail rows
       while (!cursor.end_of_table) {
@@ -234,7 +242,7 @@ const connect = ((path) => {
       */
       const [, id, username, email]  = line.match(/insert\s+(\d+)\s+(\w+)\s+(.*)/)
 
-      const cursor = await table.find(+id)
+      let cursor = await table.find(+id)
 
       const buffer = await cursor.page()
       const pn = cursor.page_num
@@ -249,10 +257,10 @@ const connect = ((path) => {
 
       const row = serialize({ id: +id, username, email })
 
-      leaf_node_insert(buffer, cursor.cell_num, +id, row)
+      await leaf_node_insert(buffer, cursor.cell_num, +id, row, table)
 
-      console.log('write', pn, leaf_node_value(buffer, cursor.cell_num).read(), deserialize(leaf_node_value(buffer, cursor.cell_num).read()))
-
+      // cursor = await table.find(+id)
+      console.log('write', cursor.page_num, leaf_node_value(await cursor.page(), cursor.cell_num).read(), deserialize(leaf_node_value(await cursor.page(), cursor.cell_num).read()))
       await cursor.flush()
     }
 
@@ -260,8 +268,12 @@ const connect = ((path) => {
       print_constants()
     }
 
+    if (line.includes('btree')) {
+      await print_tree(table.pager, table.root_page_num, 0)
+    }
+
     if (line.includes('exit')) {
-      await db.close()
+      await table.close()
       interface.close()
     }
   })
