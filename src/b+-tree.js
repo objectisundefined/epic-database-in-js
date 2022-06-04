@@ -632,7 +632,7 @@ const internal_node_cell = (buffer, cell_num) => {
 const internal_node_child = (buffer, child_num) => {
   const num_keys = internal_node_num_keys(buffer).read()
 
-  assert(child_num < num_keys, `child_num: ${child_num} >= num_keys: ${num_keys}`)
+  assert(child_num <= num_keys, `child_num: ${child_num} > num_keys: ${num_keys}`)
 
   if (child_num == num_keys) {
     return internal_node_right_child(buffer)
@@ -681,6 +681,11 @@ const get_node_max_key = (buffer) => {
 //   return (bool)value;
 // }
 
+// void set_node_root(void* node, bool is_root) {
+//   uint8_t value = is_root;
+//   *((uint8_t*)(node + IS_ROOT_OFFSET)) = value;
+// }
+
 const node_root = (buffer) => {
   assert(buffer.length === PAGE_SIZE, `buffer.length: ${buffer.length}`)
 
@@ -692,10 +697,64 @@ const node_root = (buffer) => {
   }
 }
 
-// void set_node_root(void* node, bool is_root) {
-//   uint8_t value = is_root;
-//   *((uint8_t*)(node + IS_ROOT_OFFSET)) = value;
+// Cursor* internal_node_find(Table* table, uint32_t page_num, uint32_t key) {
+//   void* node = get_page(table->pager, page_num);
+//   uint32_t num_keys = *internal_node_num_keys(node);
+
+//   /* Binary search to find index of child to search */
+//   uint32_t min_index = 0;
+//   uint32_t max_index = num_keys; /* there is one more child than key */
+
+//   while (min_index != max_index) {
+//     uint32_t index = (min_index + max_index) / 2;
+//     uint32_t key_to_right = *internal_node_key(node, index);
+//     if (key_to_right >= key) {
+//       max_index = index;
+//     } else {
+//       min_index = index + 1;
+//     }
+//   }
+
+//   uint32_t child_num = *internal_node_child(node, min_index);
+//   void* child = get_page(table->pager, child_num);
+//   switch (get_node_type(child)) {
+//     case NODE_LEAF:
+//       return leaf_node_find(table, child_num, key);
+//     case NODE_INTERNAL:
+//       return internal_node_find(table, child_num, key);
+//   }
 // }
+
+const internal_node_find = async (buffer, key, pager) => {
+  const num_keys = internal_node_num_keys(buffer).read()
+
+  let i = 0
+  let j = num_keys - 1
+
+  while (i <= j) {
+    const m = Math.floor((i + j) / 2)
+    const k = internal_node_key(buffer, m).read()
+
+    if (key === k) {
+      i = m
+      break
+    } else if (key < k) {
+      j = m - 1
+    } else {
+      i = m + 1
+    }
+  }
+
+  const child_num = internal_node_child(buffer, i).read()
+  const node = await pager.page(child_num)
+
+  switch (node_type(node).read()) {
+    case NodeType.NODE_LEAF:
+      return leaf_node_find(node, key, pager)
+    case NodeType.NODE_INTERNAL:
+      return internal_node_find(node, key, pager)
+  }
+}
 
 module.exports = {
   ROW_SIZE,
@@ -712,4 +771,5 @@ module.exports = {
   leaf_node_insert,
   leaf_node_find,
   node_type,
+  internal_node_find,
 }

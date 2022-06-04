@@ -2,7 +2,7 @@ const path = require('path')
 const fs = require('fs/promises')
 
 const assert = require('assert')
-const { ROW_SIZE, PAGE_SIZE, leaf_node_num_cells, leaf_node_cell, initialize_leaf_node, leaf_node_value, leaf_node_insert, node_type, NodeType, leaf_node_find, leaf_node_key, print_constants, print_tree } = require('./b+-tree')
+const { ROW_SIZE, PAGE_SIZE, leaf_node_num_cells, leaf_node_cell, initialize_leaf_node, leaf_node_value, leaf_node_insert, node_type, NodeType, leaf_node_find, leaf_node_key, print_constants, print_tree, internal_node_find } = require('./b+-tree')
 
 const serialize = row => {
   const buffer = Buffer.alloc(ROW_SIZE)
@@ -135,7 +135,8 @@ const connect = ((path) => {
         if (node_type(buffer).read() === NodeType.NODE_LEAF) {
           return table_pos(this, leaf_node_find(buffer, key) /* pos */)
         } else {
-          throw Error('Need to implement searching an internal node')
+          // throw Error('Need to implement searching an internal node')
+          return table_pos(this, await internal_node_find(buffer, key, pager))
         }
       },
       async close() {

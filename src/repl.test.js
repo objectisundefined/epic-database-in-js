@@ -20,7 +20,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
   repl.on('close', () => process.exit(0))
   repl.on('error', () => process.exit(1))
 
-  for (let i = 0; i < 50; i++) {
+  for (let i = 0; i < 10; i++) {
     const row = struct(i + 1)
 
     await promisify(repl.stdin.write).bind(repl.stdin)(`insert ${row.id} ${row.username} ${row.email}\n`)
