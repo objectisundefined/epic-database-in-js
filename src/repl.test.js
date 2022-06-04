@@ -22,8 +22,22 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
   repl.on('close', () => process.exit(0))
   repl.on('error', () => process.exit(1))
 
-  for (let i = 0; i < 2 * LEAF_NODE_MAX_CELLS - 1; i++) {
-    const row = struct(i + 1)
+  const shuffle = (arr) => {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[arr[i], arr[j]] = [arr[j], arr[i]]
+    }
+    return arr
+  }
+
+  const records_len = 4 * LEAF_NODE_MAX_CELLS - 3
+
+  const ids = shuffle(Array.from({ length: records_len }, (_, i) => i + 1))
+
+  console.log(ids)
+
+  for (let i = 0; i < records_len; i++) {
+    const row = struct(ids[i])
 
     await promisify(repl.stdin.write).bind(repl.stdin)(`insert ${row.id} ${row.username} ${row.email}\n`)
 
