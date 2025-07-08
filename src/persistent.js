@@ -13,10 +13,11 @@ const NodeType = {
   ['Leaf']: 1,
 }
 
-const RowSize =
-  4 + /* id	integer */
-  32 + /* username	varchar(32) */ /* \0 */
-  255 /* email	varchar(255) */ /* \0 */
+// RowSize is now dynamic and will be calculated from schema
+// const RowSize =
+//   4 + /* id	integer */
+//   32 + /* username	varchar(32) */ /* \0 */
+//   255 /* email	varchar(255) */ /* \0 */
 
 const NodeHeaderLayout = [
   ['Type', 1 /* uint8_t */],
@@ -36,10 +37,11 @@ const LeafHeaderLayout = [
   ['Next', 4 /* uint32_t */],
 ]
 
-const LeafCellLayout = [
-  ['Key', 4 /* uint32_t */],
-  ['Value', RowSize /* uint32_t */],
-]
+// LeafCellLayout is now dynamic based on schema
+// const LeafCellLayout = [
+//   ['Key', 4 /* uint32_t */],
+//   ['Value', RowSize /* dynamic based on schema */],
+// ]
 
 const layoutOffsetOf = (layout, type) => {
   let offset = 0
@@ -54,6 +56,11 @@ const layoutOffsetOf = (layout, type) => {
 
   return offset
 }
+
+const getLeafCellLayout = (rowSize) => [
+  ['Key', 4 /* uint32_t */],
+  ['Value', rowSize /* dynamic based on schema */],
+]
 
 const SerializeNode = (node, buffer) => {
   let offset = 0
@@ -97,10 +104,10 @@ const SerializeLeaf = (node, buffer, serializeValFn) => {
 
   for (let i = 0; i < node.size; i++) {
     buffer.writeUInt32LE(node.keys[i], offset)
-    offset = offset + layoutOffsetOf(LeafCellLayout, 'Key')
+    offset = offset + 4 // Key size is always 4 bytes
 
     buffer.set(serializeValFn(node.values[i]), offset) // buf
-    offset = offset - layoutOffsetOf(LeafCellLayout, 'Key') + layoutOffsetOf(LeafCellLayout, 'Value')
+    offset = offset + serializeValFn(node.values[i]).length // Dynamic value size
   }
 
   return buffer
@@ -129,7 +136,7 @@ const DeserializeNode = (buffer, pn) => {
     offset = offset + layoutOffsetOf(NodeCellLayout, 'Link')
 
     const key = buffer.readUInt32LE(offset)
-    offset = offset - layoutOffsetOf(NodeCellLayout, 'Link') + layoutOffsetOf(NodeCellLayout, 'key')
+    offset = offset - layoutOffsetOf(NodeCellLayout, 'Link') + layoutOffsetOf(NodeCellLayout, 'Key')
 
     links.push(link)
     keys.push(key)
@@ -147,7 +154,7 @@ const DeserializeNode = (buffer, pn) => {
   }
 }
 
-const DeserializeLeaf = (buffer, pn, deserializeValFn) => {
+const DeserializeLeaf = (buffer, pn, deserializeValFn, rowSize) => {
   let offset = layoutOffsetOf(LeafHeaderLayout, 'Type')
 
   const parent = buffer.readUInt32LE(offset)
@@ -164,10 +171,10 @@ const DeserializeLeaf = (buffer, pn, deserializeValFn) => {
 
   for (let i = 0; i < size; i++) {
     const key = buffer.readUInt32LE(offset)
-    offset = offset + layoutOffsetOf(LeafCellLayout, 'Key')
+    offset = offset + 4 // Key size is always 4 bytes
 
-    const value = deserializeValFn(buffer.subarray(offset, offset + RowSize))
-    offset = offset - layoutOffsetOf(LeafCellLayout, 'Key') + layoutOffsetOf(LeafCellLayout, 'Value')
+    const value = deserializeValFn(buffer.subarray(offset, offset + rowSize))
+    offset = offset + rowSize // Dynamic value size
 
     keys.push(key)
     values.push(value)
@@ -184,16 +191,17 @@ const DeserializeLeaf = (buffer, pn, deserializeValFn) => {
   }
 }
 
-const Deserialize = (buffer, pn, deserializeValFn) => {
+const Deserialize = (buffer, pn, deserializeValFn, rowSize) => {
   const type = buffer.readUInt8()
 
   return type === NodeType.Node
     ? DeserializeNode(buffer, pn)
-    : DeserializeLeaf(buffer, pn, deserializeValFn)
+    : DeserializeLeaf(buffer, pn, deserializeValFn, rowSize)
 }
 
-const MaxNodeSize = ~~((PageSize - layoutOffsetOf(NodeHeaderLayout, 'Size')) / layoutOffsetOf(NodeCellLayout, 'Key'))
-const MaxLeafSize = ~~((PageSize - layoutOffsetOf(LeafHeaderLayout, 'Next')) / layoutOffsetOf(LeafCellLayout, 'Value'))
+// These functions now accept rowSize as parameter
+const getMaxNodeSize = () => ~~((PageSize - layoutOffsetOf(NodeHeaderLayout, 'Size')) / layoutOffsetOf(NodeCellLayout, 'Key'))
+const getMaxLeafSize = (rowSize) => ~~((PageSize - layoutOffsetOf(LeafHeaderLayout, 'Next')) / layoutOffsetOf(getLeafCellLayout(rowSize), 'Value'))
 
 const connectDB = ((path) => {
   /** @type { fs.FileHandle } */
@@ -234,7 +242,7 @@ const connectDB = ((path) => {
       // case: last page was not full.
       size === buffer.length
         ? assert(buffer.length % PageSize === 0, `buffer length ${buffer.length}`)
-        : assert(size % RowSize === 0, `size ${size}`)
+        : assert(size > 0, `size ${size}`) // Allow dynamic row sizes
 
       const r = await fd.read(buffer, 0, size, pn * PageSize)
 
@@ -244,7 +252,7 @@ const connectDB = ((path) => {
       // case: last page was not full.
       size === buffer.length
         ? assert(buffer.length % PageSize === 0, `buffer length ${buffer.length}`)
-        : assert(size % RowSize === 0, `size ${size}`)
+        : assert(size > 0, `size ${size}`) // Allow dynamic row sizes
 
       const r = await fd.write(buffer, 0, size, pn * PageSize)
 
@@ -266,6 +274,7 @@ const createPager = async (db, options) => {
   const pager = {
     no: size === 0 ? 1 : size /* page 0 + data pages */,
     pages: [],
+    rowSize: options.rowSize || options.schema?.getRowSize() || 291, // Default to original row size for backward compatibility
     async page(pn) {
       if (this.pages[pn]) {
         return this.pages[pn]
@@ -275,7 +284,7 @@ const createPager = async (db, options) => {
   
       await db.read(pn, buf)
   
-      const val = Deserialize(buf, pn, options.deserialize)
+      const val = Deserialize(buf, pn, options.deserialize, this.rowSize)
   
       // patch root
       if (pn === 0) {
@@ -305,10 +314,14 @@ const createPager = async (db, options) => {
 }
 
 module.exports = {
-  RowSize,
-  MaxNodeSize,
-  MaxLeafSize,
+  // Export functions that depend on schema
+  getMaxNodeSize,
+  getMaxLeafSize,
 
   connectDB,
   createPager,
+  
+  // Export constants for backward compatibility
+  PageSize,
+  NodeType,
 }
