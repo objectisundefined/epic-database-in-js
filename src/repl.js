@@ -463,6 +463,9 @@ const demonstrateSchemas = async () => {
 
   interface.on('line', async line => {
     try {
+      // Remove prompt character if present
+      line = line.replace(/^>\s*/, '').trim()
+      
       if (line.includes('schema ')) {
         const schemaName = line.split(' ')[1]
         if (DefaultSchemas[schemaName]) {
