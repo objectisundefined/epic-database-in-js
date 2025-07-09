@@ -123,6 +123,274 @@ const Insert = async (node, key, value, pager, Order) => {
   }
 }
 
+const Remove = async (node, key, pager, Order) => {
+  if (node === null) {
+    return null // Key not found
+  }
+
+  if (node.type === 'Leaf') {
+    const i = binarySearch(node.keys, key)
+    
+    // Check if key exists
+    if (i >= node.keys.length || node.keys[i] !== key) {
+      return await pager.page(0) // Key not found, return root unchanged
+    }
+
+    // Remove the key-value pair
+    node.keys.splice(i, 1)
+    node.values.splice(i, 1)
+    node.size -= 1
+
+    // Check if we need to handle underflow
+    const minKeys = Math.floor(Order.Leaf / 2)
+    
+    // If this is the root and becomes empty
+    if (node.parent === 0 && node.size === 0) {
+      pager.pages[0] = null
+      return null
+    }
+    
+    // If this is the root or has enough keys, we're done
+    if (node.parent === 0 || node.size >= minKeys) {
+      return await pager.page(0)
+    }
+
+    // Handle underflow
+    return await HandleLeafUnderflow(node, pager, Order)
+  } else {
+    // Internal node - find the child that should contain the key
+    const { pn } = await FindKey(pager, key)
+    const child = await pager.page(pn)
+    
+    const result = await Remove(child, key, pager, Order)
+    
+    // Check if we need to handle underflow in internal nodes
+    if (child.size < Math.floor(Order.Node / 2) && child.parent !== 0) {
+      return await HandleNodeUnderflow(child, pager, Order)
+    }
+    
+    return result
+  }
+}
+
+const HandleLeafUnderflow = async (node, pager, Order) => {
+  const parent = await pager.page(node.parent)
+  const nodeIndex = parent.links.indexOf(node.no)
+  
+  // Try to borrow from left sibling
+  if (nodeIndex > 0) {
+    const leftSibling = await pager.page(parent.links[nodeIndex - 1])
+    const minKeys = Math.floor(Order.Leaf / 2)
+    
+    if (leftSibling.size > minKeys) {
+      // Borrow from left sibling
+      const borrowedKey = leftSibling.keys.pop()
+      const borrowedValue = leftSibling.values.pop()
+      leftSibling.size -= 1
+      
+      node.keys.unshift(borrowedKey)
+      node.values.unshift(borrowedValue)
+      node.size += 1
+      
+      // Update parent key
+      parent.keys[nodeIndex - 1] = borrowedKey
+      
+      return await pager.page(0)
+    }
+  }
+  
+  // Try to borrow from right sibling
+  if (nodeIndex < parent.links.length - 1) {
+    const rightSibling = await pager.page(parent.links[nodeIndex + 1])
+    const minKeys = Math.floor(Order.Leaf / 2)
+    
+    if (rightSibling.size > minKeys) {
+      // Borrow from right sibling
+      const borrowedKey = rightSibling.keys.shift()
+      const borrowedValue = rightSibling.values.shift()
+      rightSibling.size -= 1
+      
+      node.keys.push(borrowedKey)
+      node.values.push(borrowedValue)
+      node.size += 1
+      
+      // Update parent key
+      parent.keys[nodeIndex] = rightSibling.keys[0] || borrowedKey
+      
+      return await pager.page(0)
+    }
+  }
+  
+  // Must merge with a sibling
+  if (nodeIndex > 0) {
+    // Merge with left sibling
+    const leftSibling = await pager.page(parent.links[nodeIndex - 1])
+    
+    leftSibling.keys.push(...node.keys)
+    leftSibling.values.push(...node.values)
+    leftSibling.size += node.size
+    leftSibling.next = node.next
+    
+    // Remove node from parent
+    parent.keys.splice(nodeIndex - 1, 1)
+    parent.links.splice(nodeIndex, 1)
+    parent.size -= 1
+    
+    // Remove the merged node from pager
+    delete pager.pages[node.no]
+    
+  } else {
+    // Merge with right sibling
+    const rightSibling = await pager.page(parent.links[nodeIndex + 1])
+    
+    node.keys.push(...rightSibling.keys)
+    node.values.push(...rightSibling.values)
+    node.size += rightSibling.size
+    node.next = rightSibling.next
+    
+    // Remove right sibling from parent
+    parent.keys.splice(nodeIndex, 1)
+    parent.links.splice(nodeIndex + 1, 1)
+    parent.size -= 1
+    
+    // Remove the merged node from pager
+    delete pager.pages[rightSibling.no]
+  }
+  
+  // Check if parent needs handling
+  const minNodeKeys = Math.floor(Order.Node / 2)
+  if (parent.parent !== 0 && parent.size < minNodeKeys) {
+    return await HandleNodeUnderflow(parent, pager, Order)
+  }
+  
+  return await pager.page(0)
+}
+
+const HandleNodeUnderflow = async (node, pager, Order) => {
+  const parent = await pager.page(node.parent)
+  const nodeIndex = parent.links.indexOf(node.no)
+  const minKeys = Math.floor(Order.Node / 2)
+  
+  // Try to borrow from left sibling
+  if (nodeIndex > 0) {
+    const leftSibling = await pager.page(parent.links[nodeIndex - 1])
+    
+    if (leftSibling.size > minKeys) {
+      // Borrow from left sibling
+      const borrowedKey = leftSibling.keys.pop()
+      const borrowedLink = leftSibling.links.pop()
+      leftSibling.size -= 1
+      
+      node.keys.unshift(parent.keys[nodeIndex - 1])
+      node.links.unshift(borrowedLink)
+      node.size += 1
+      
+      parent.keys[nodeIndex - 1] = borrowedKey
+      
+      // Update borrowed link's parent
+      const borrowedChild = await pager.page(borrowedLink)
+      borrowedChild.parent = node.no
+      
+      return await pager.page(0)
+    }
+  }
+  
+  // Try to borrow from right sibling
+  if (nodeIndex < parent.links.length - 1) {
+    const rightSibling = await pager.page(parent.links[nodeIndex + 1])
+    
+    if (rightSibling.size > minKeys) {
+      // Borrow from right sibling
+      const borrowedKey = rightSibling.keys.shift()
+      const borrowedLink = rightSibling.links.shift()
+      rightSibling.size -= 1
+      
+      node.keys.push(parent.keys[nodeIndex])
+      node.links.push(borrowedLink)
+      node.size += 1
+      
+      parent.keys[nodeIndex] = borrowedKey
+      
+      // Update borrowed link's parent
+      const borrowedChild = await pager.page(borrowedLink)
+      borrowedChild.parent = node.no
+      
+      return await pager.page(0)
+    }
+  }
+  
+  // Must merge with a sibling
+  if (nodeIndex > 0) {
+    // Merge with left sibling
+    const leftSibling = await pager.page(parent.links[nodeIndex - 1])
+    
+    leftSibling.keys.push(parent.keys[nodeIndex - 1])
+    leftSibling.keys.push(...node.keys)
+    leftSibling.links.push(...node.links)
+    leftSibling.size += node.size + 1
+    
+    // Update all merged links' parent
+    for (const link of node.links) {
+      const child = await pager.page(link)
+      child.parent = leftSibling.no
+    }
+    
+    // Remove node from parent
+    parent.keys.splice(nodeIndex - 1, 1)
+    parent.links.splice(nodeIndex, 1)
+    parent.size -= 1
+    
+    // Remove the merged node from pager
+    delete pager.pages[node.no]
+    
+  } else {
+    // Merge with right sibling
+    const rightSibling = await pager.page(parent.links[nodeIndex + 1])
+    
+    node.keys.push(parent.keys[nodeIndex])
+    node.keys.push(...rightSibling.keys)
+    node.links.push(...rightSibling.links)
+    node.size += rightSibling.size + 1
+    
+    // Update all merged links' parent
+    for (const link of rightSibling.links) {
+      const child = await pager.page(link)
+      child.parent = node.no
+    }
+    
+    // Remove right sibling from parent
+    parent.keys.splice(nodeIndex, 1)
+    parent.links.splice(nodeIndex + 1, 1)
+    parent.size -= 1
+    
+    // Remove the merged node from pager
+    delete pager.pages[rightSibling.no]
+  }
+  
+  // Check if parent is now empty (this would be the new root case)
+  if (parent.size === 0 && parent.parent === 0) {
+    // The tree height decreases
+    if (nodeIndex > 0) {
+      const newRoot = await pager.page(parent.links[0])
+      newRoot.parent = 0
+      pager.pages[0] = newRoot
+    } else {
+      node.parent = 0
+      pager.pages[0] = node
+    }
+    
+    delete pager.pages[parent.no]
+    return await pager.page(0)
+  }
+  
+  // Check if parent needs further handling
+  if (parent.parent !== 0 && parent.size < minKeys) {
+    return await HandleNodeUnderflow(parent, pager, Order)
+  }
+  
+  return await pager.page(0)
+}
+
 const Shift = async (node, key, link, pager, Order) => {
   // node must be Node and key was lower than node max key
 
@@ -380,6 +648,7 @@ const demonstrateSchemas = async () => {
   console.log('  schema <name>         - Switch to a predefined schema (User, Product, LogEntry, etc.)')
   console.log('  custom <json>         - Define a custom schema')
   console.log('  insert <data>         - Insert data (format depends on current schema)')
+  console.log('  remove <id>           - Remove record by ID')
   console.log('  select <conditions>   - Search data')
   console.log('  btree                 - Show B-tree structure')
   console.log('  current               - Show current schema info')
@@ -564,6 +833,49 @@ const demonstrateSchemas = async () => {
         } catch (e) {
           console.error('Insert error:', e.message)
           console.log('Usage: insert {"id": 1, "name": "value", ...} or insert <id> <username> <email>')
+        }
+      }
+
+      else if (line.includes('remove')) {
+        try {
+          const keyStr = line.substring(6).trim()
+          const key = parseInt(keyStr)
+          
+          if (isNaN(key)) {
+            console.error('Invalid key. Please provide a numeric ID.')
+            interface.write('> ')
+            return
+          }
+
+          // Check if key exists first
+          const { pn, col } = await FindKey(database.pager, key)
+          const node = await database.pager.page(pn)
+          
+          if (col >= node.keys.length || node.keys[col] !== key) {
+            console.error(`Key ${key} not found`)
+            interface.write('> ')
+            return
+          }
+
+          // Store the value before removing it
+          const removedValue = node.values[col]
+          
+          // Remove the entry
+          const root = await database.pager.page(0)
+          const newRoot = await Remove(root, key, database.pager, database.Order)
+          
+          if (newRoot === null) {
+            // Tree became empty
+            console.log(`Removed record with key ${key}:`, removedValue)
+            console.log('Database is now empty')
+          } else {
+            console.log(`Removed record with key ${key}:`, removedValue)
+          }
+
+          await database.pager.flush()
+        } catch (e) {
+          console.error('Remove error:', e.message)
+          console.log('Usage: remove <id>')
         }
       }
 
