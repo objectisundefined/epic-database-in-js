@@ -19,7 +19,7 @@ This project is based on the "Build Your Own Database" tutorial series:
 - ✅ **Multiple Data Types** - INT32, UINT32, INT64, FLOAT, DOUBLE, BOOLEAN, VARCHAR, JSON, BINARY
 - ✅ **Predefined Schemas** - Ready-to-use schemas for common use cases
 - ✅ **Dynamic Serialization** - Automatic serialization/deserialization based on schema
-- ✅ **Enhanced REPL** - Interactive shell with schema switching, JSON data support, and full CRUD operations
+- ✅ **Enhanced REPL** - Interactive shell with schema switching, JSON data support, and full CRUD operations (Create, Read, Update, Delete)
 - ✅ **Backward Compatibility** - Existing databases continue to work unchanged
 - ✅ **Performance Optimized** - Schema-aware page size calculations
 
@@ -82,6 +82,9 @@ node src/repl.js
 
 # Insert data (JSON format)
 > insert {"id": 1, "name": "Product Name", "price": 29.99}
+
+# Update existing data by ID
+> update {"id": 1, "name": "Updated Product Name", "price": 39.99}
 
 # Remove data by ID
 > remove 1

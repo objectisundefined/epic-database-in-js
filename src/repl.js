@@ -123,6 +123,25 @@ const Insert = async (node, key, value, pager, Order) => {
   }
 }
 
+const Update = async (key, newValue, pager) => {
+  // Find the leaf node containing the key
+  const { pn, col } = await FindKey(pager, key)
+  const node = await pager.page(pn)
+  
+  // Check if key exists
+  if (col >= node.keys.length || node.keys[col] !== key) {
+    return { success: false, error: `Key ${key} not found` }
+  }
+  
+  // Store the old value for reference
+  const oldValue = node.values[col]
+  
+  // Update the value in place (key remains the same, so B-tree structure is preserved)
+  node.values[col] = newValue
+  
+  return { success: true, oldValue, newValue }
+}
+
 const Remove = async (node, key, pager, Order) => {
   if (node === null) {
     return null // Key not found
@@ -648,6 +667,7 @@ const demonstrateSchemas = async () => {
   console.log('  schema <name>         - Switch to a predefined schema (User, Product, LogEntry, etc.)')
   console.log('  custom <json>         - Define a custom schema')
   console.log('  insert <data>         - Insert data (format depends on current schema)')
+  console.log('  update <data>         - Update existing record by ID')
   console.log('  remove <id>           - Remove record by ID')
   console.log('  select <conditions>   - Search data')
   console.log('  btree                 - Show B-tree structure')
@@ -833,6 +853,39 @@ const demonstrateSchemas = async () => {
         } catch (e) {
           console.error('Insert error:', e.message)
           console.log('Usage: insert {"id": 1, "name": "value", ...} or insert <id> <username> <email>')
+        }
+      }
+
+      else if (line.includes('update')) {
+        try {
+          // Try to parse as JSON first
+          const dataStr = line.substring(6).trim()
+          let data
+          
+          if (dataStr.startsWith('{')) {
+            data = JSON.parse(dataStr)
+          } else {
+            // For backward compatibility with the original format
+            const [, id, username, email] = line.match(/update\s+(\d+)\s+(\w+)\s+(.*)/)
+            data = { id: +id, username, email }
+          }
+
+          const key = data.id || data.key || Object.values(data)[0] // Use id, key, or first value as key
+          
+          // Perform the update
+          const result = await Update(key, data, database.pager)
+          
+          if (result.success) {
+            console.log(`Updated record with key ${key}:`)
+            console.log('Old value:', result.oldValue)
+            console.log('New value:', result.newValue)
+            await database.pager.flush()
+          } else {
+            console.error(result.error)
+          }
+        } catch (e) {
+          console.error('Update error:', e.message)
+          console.log('Usage: update {"id": 1, "name": "new_value", ...} or update <id> <username> <email>')
         }
       }
 
