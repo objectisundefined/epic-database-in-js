@@ -274,7 +274,7 @@ const createPager = async (db, options) => {
   const pager = {
     no: size === 0 ? 1 : size /* page 0 + data pages */,
     pages: [],
-    rowSize: options.rowSize || options.schema?.getRowSize() || 291, // Default to original row size for backward compatibility
+    rowSize: options.rowSize || options.schema?.getRowSize(),
     async page(pn) {
       if (this.pages[pn]) {
         return this.pages[pn]
@@ -321,7 +321,7 @@ module.exports = {
   connectDB,
   createPager,
   
-  // Export constants for backward compatibility
+  // Export constants
   PageSize,
   NodeType,
 }
