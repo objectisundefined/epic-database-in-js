@@ -103,7 +103,7 @@ class Schema {
 
 // Pre-defined schemas for common use cases
 const DefaultSchemas = {
-  // Original schema for backward compatibility
+  // User accounts schema
   User: new Schema({
     id: DataTypes.UINT32,
     username: DataTypes.VARCHAR(32),

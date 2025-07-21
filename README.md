@@ -20,7 +20,7 @@ This project is based on the "Build Your Own Database" tutorial series:
 - ✅ **Predefined Schemas** - Ready-to-use schemas for common use cases
 - ✅ **Dynamic Serialization** - Automatic serialization/deserialization based on schema
 - ✅ **Enhanced REPL** - Interactive shell with schema switching, JSON data support, and full CRUD operations (Create, Read, Update, Delete)
-- ✅ **Backward Compatibility** - Existing databases continue to work unchanged
+- ✅ **Schema Flexibility** - Multiple predefined schemas and custom schema support
 - ✅ **Performance Optimized** - Schema-aware page size calculations
 
 ### Quick Example
@@ -103,7 +103,7 @@ node src/repl.js
 
 | Schema | Size | Use Case |
 |--------|------|----------|
-| User | 291 bytes | User accounts (original) |
+| User | 291 bytes | User accounts |
 | Product | 617 bytes | E-commerce products |
 | LogEntry | 1,522 bytes | Application logs |
 | Event | 2,066 bytes | Analytics events |
@@ -207,21 +207,21 @@ The schema system is optimized for performance:
 └── README.md             # This file
 ```
 
-## Backward Compatibility
+## Schema Usage
 
-All existing functionality remains unchanged:
+The enhanced B-tree implementation provides:
 
-- Original User schema works as before
-- Existing databases continue to function
-- Legacy serialization functions still available
-- No breaking changes to core B-tree operations
+- Multiple predefined schemas for common use cases
+- Custom schema creation with flexible data types
+- Automatic serialization/deserialization
+- Schema-aware performance optimizations
 
 ## Migration
 
-To migrate from the original implementation:
+To work with different data structures:
 
-1. Use `DefaultSchemas.User` for existing user data
-2. Create custom schemas for new use cases
+1. Use predefined schemas (`DefaultSchemas.User`, `DefaultSchemas.Product`, etc.) for common patterns
+2. Create custom schemas for specific use cases
 3. Test with your data patterns
 4. Monitor performance with different schema sizes
 
@@ -261,10 +261,10 @@ rm -rf t.db
 
 When adding new features:
 
-1. Maintain backward compatibility
-2. Add comprehensive tests
-3. Update documentation
-4. Consider performance impact
-5. Follow existing code patterns
+1. Add comprehensive tests
+2. Update documentation
+3. Consider performance impact
+4. Follow existing code patterns
+5. Ensure schema compatibility
 
 This enhanced B-tree database is now suitable for a wide variety of applications while maintaining the simplicity and performance of the original implementation.

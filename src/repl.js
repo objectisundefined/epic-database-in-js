@@ -3,31 +3,6 @@ const rl = require('readline')
 const { getMaxNodeSize, getMaxLeafSize, connectDB, createPager } = require('./persistent')
 const { DataTypes, Schema, DefaultSchemas } = require('./schema')
 
-// Backward compatibility: original serialization functions
-const serializeRow = row => {
-  const buffer = Buffer.alloc(291) // Original RowSize
-
-  buffer.writeUInt32LE(row.id, 0)
-  buffer.write(row.username, 4, 32)
-  buffer.write(row.email, 36, 255)
-
-  return buffer
-}
-
-const int = buffer => buffer.readUInt32LE(0)
-
-const str = (buffer, encoding, start, end = buffer.length) => {
-  return buffer.subarray(start, Math.min(buffer.indexOf('\x00', start), end)).toString(encoding)
-}
-
-const deserializeRow = buffer => {
-  return {
-    id: int(buffer),
-    username: str(buffer, 'utf8', 4, 36),
-    email: str(buffer, 'utf8', 36, 291),
-  }
-}
-
 // Schema-based database class
 class SchemaDatabase {
   constructor(dbPath, schema) {
@@ -675,7 +650,7 @@ const demonstrateSchemas = async () => {
   console.log('  examples              - Show data examples for current schema')
   console.log('  quit                  - Exit')
 
-  // Start with the original User schema for backward compatibility
+  // Start with the User schema
   let currentSchema = DefaultSchemas.User
   let database = new SchemaDatabase('./test.db', currentSchema)
   await database.connect()
@@ -828,9 +803,7 @@ const demonstrateSchemas = async () => {
           if (dataStr.startsWith('{')) {
             data = JSON.parse(dataStr)
           } else {
-            // For backward compatibility with the original format
-            const [, id, username, email] = line.match(/insert\s+(\d+)\s+(\w+)\s+(.*)/)
-            data = { id: +id, username, email }
+            throw new Error('Data must be in JSON format')
           }
 
           const key = data.id || data.key || Object.values(data)[0] // Use id, key, or first value as key
@@ -852,7 +825,7 @@ const demonstrateSchemas = async () => {
           }
         } catch (e) {
           console.error('Insert error:', e.message)
-          console.log('Usage: insert {"id": 1, "name": "value", ...} or insert <id> <username> <email>')
+          console.log('Usage: insert {"id": 1, "name": "value", ...}')
         }
       }
 
@@ -865,9 +838,7 @@ const demonstrateSchemas = async () => {
           if (dataStr.startsWith('{')) {
             data = JSON.parse(dataStr)
           } else {
-            // For backward compatibility with the original format
-            const [, id, username, email] = line.match(/update\s+(\d+)\s+(\w+)\s+(.*)/)
-            data = { id: +id, username, email }
+            throw new Error('Data must be in JSON format')
           }
 
           const key = data.id || data.key || Object.values(data)[0] // Use id, key, or first value as key
@@ -885,7 +856,7 @@ const demonstrateSchemas = async () => {
           }
         } catch (e) {
           console.error('Update error:', e.message)
-          console.log('Usage: update {"id": 1, "name": "new_value", ...} or update <id> <username> <email>')
+          console.log('Usage: update {"id": 1, "name": "new_value", ...}')
         }
       }
 

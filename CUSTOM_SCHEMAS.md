@@ -1,6 +1,6 @@
 # Custom Data Structures Support
 
-This B-tree database now supports custom data structures through a flexible schema system. You can define your own data types and schemas while maintaining full backward compatibility with the original User schema.
+This B-tree database supports custom data structures through a flexible schema system. You can define your own data types and schemas using predefined schemas or create entirely custom structures.
 
 ## Table of Contents
 
@@ -314,11 +314,7 @@ console.log(`Page utilization: ${(maxRecordsPerPage * rowSize / 4096 * 100).toFi
 The original hardcoded User schema is now available as `DefaultSchemas.User`:
 
 ```javascript
-// Old way (still works)
-const serializeRow = row => { /* manual serialization */ }
-const deserializeRow = buffer => { /* manual deserialization */ }
-
-// New way
+// Using predefined schema
 const pager = await createPager(db, {
   schema: DefaultSchemas.User,
   serialize: (obj) => DefaultSchemas.User.serialize(obj),
@@ -333,12 +329,12 @@ const pager = await createPager(db, {
 3. **Test thoroughly** with your data patterns
 4. **Monitor performance** with different schema sizes
 
-### Backward Compatibility
+### Schema Flexibility
 
-- Existing databases continue to work unchanged
-- Original serialization functions remain available
-- REPL supports both old and new formats
-- No breaking changes to core B-tree operations
+- Multiple predefined schemas available for common use cases
+- Custom schema creation with flexible data types
+- JSON-only format in REPL for consistency
+- Schema-aware optimizations throughout
 
 ## Best Practices
 
