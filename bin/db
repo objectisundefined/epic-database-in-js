@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+
+/**
+ * Database CLI Executable
+ * 
+ * Simple wrapper script to start the database CLI.
+ */
+
+require('../cli/database-cli.js')
