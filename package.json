@@ -1,0 +1,79 @@
+{
+  "name": "bplus-tree-database",
+  "version": "2.0.0",
+  "description": "A high-performance JavaScript database with B+ tree indexing for superior range query performance",
+  "main": "lib/index.js",
+  "type": "commonjs",
+  "bin": {
+    "db": "./bin/db",
+    "database-cli": "./cli/database-cli.js"
+  },
+  "scripts": {
+    "start": "node cli/database-cli.js",
+    "repl": "node cli/database-cli.js",
+    "test": "node test/bplus-tree.test.js && node test/schema.test.js",
+    "test:btree": "node test/table.test.js",
+    "test:bplus": "node test/bplus-tree.test.js",
+    "demo": "node examples-legacy/bplus-tree-demo.js",
+    "demo:btree": "node examples-legacy/table-crud.js",
+    "demo:bplus": "node examples-legacy/bplus-tree-demo.js",
+    "benchmark": "node examples-legacy/bplus-tree-demo.js",
+    "docs": "echo 'Documentation available in docs/ directory'",
+    "clean": "rm -rf data/ test-data/ *.db",
+    "install-global": "npm install -g .",
+    "lint": "echo 'No linting configured'",
+    "format": "echo 'No formatting configured'"
+  },
+  "keywords": [
+    "database",
+    "btree",
+    "bplus-tree",
+    "javascript",
+    "indexing",
+    "range-queries",
+    "performance",
+    "storage",
+    "nosql",
+    "embedded"
+  ],
+  "author": "Database Development Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/username/bplus-tree-database.git"
+  },
+  "bugs": {
+    "url": "https://github.com/username/bplus-tree-database/issues"
+  },
+  "homepage": "https://github.com/username/bplus-tree-database#readme",
+  "directories": {
+    "lib": "lib",
+    "test": "test",
+    "doc": "docs"
+  },
+  "files": [
+    "lib/",
+    "cli/",
+    "bin/",
+    "docs/",
+    "examples-legacy/",
+    "test/",
+    "README.md",
+    "LICENSE"
+  ],
+  "devDependencies": {},
+  "dependencies": {},
+  "peerDependencies": {},
+  "optionalDependencies": {},
+  "config": {
+    "database": {
+      "defaultIndexType": "bplus",
+      "defaultDataDir": "./data",
+      "pageSize": 4096,
+      "cacheSize": 100
+    }
+  }
+}
