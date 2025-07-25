@@ -7,7 +7,7 @@ const fs = require('fs/promises')
  * Table class that manages a specific table with schema-based operations
  */
 class Table {
-  constructor(name, schema, dbDir = './data') {
+  constructor(name, schema, dbDir = './data', options = {}) {
     this.name = name
     this.schema = schema
     this.dbDir = dbDir
@@ -17,6 +17,7 @@ class Table {
     this.MaxNodeSize = getMaxNodeSize()
     this.MaxLeafSize = getMaxLeafSize(schema.getRowSize())
     this.isOpen = false
+    this.options = { immediateSync: true, ...options } // Default to immediate sync for data safety
   }
 
   /**
@@ -28,7 +29,8 @@ class Table {
     // Ensure data directory exists
     await fs.mkdir(this.dbDir, { recursive: true })
 
-    this.db = connectDB(this.dbPath)
+    // Use configured sync behavior to prevent data loss
+    this.db = connectDB(this.dbPath, { immediateSync: this.options.immediateSync })
     await this.db.open()
 
     this.pager = await createPager(this.db, {
@@ -594,7 +596,7 @@ class Table {
  * Database class that manages multiple tables
  */
 class Database {
-  constructor(name, dbDir = './data') {
+  constructor(name, dbDir = './data', options = {}) {
     this.name = name
     this.dbDir = path.join(dbDir, name)
     this.tables = new Map()
@@ -603,6 +605,7 @@ class Database {
       created: new Date(),
       tables: []
     }
+    this.options = { immediateSync: true, ...options } // Default to immediate sync for data safety
   }
 
   /**
@@ -613,7 +616,7 @@ class Database {
       throw new Error(`Table '${tableName}' already exists`)
     }
 
-    const table = new Table(tableName, schema, this.dbDir)
+    const table = new Table(tableName, schema, this.dbDir, this.options)
     await table.open()
     
     this.tables.set(tableName, table)
@@ -696,7 +699,15 @@ class Database {
   async _saveMetadata() {
     await fs.mkdir(this.dbDir, { recursive: true })
     const metadataPath = path.join(this.dbDir, 'metadata.json')
-    await fs.writeFile(metadataPath, JSON.stringify(this.metadata, null, 2))
+    
+    // Write metadata and immediately sync to disk to prevent data loss
+    const fd = await fs.open(metadataPath, 'w')
+    try {
+      await fd.writeFile(JSON.stringify(this.metadata, null, 2))
+      await fd.sync() // Force immediate flush to disk
+    } finally {
+      await fd.close()
+    }
   }
 
   async _loadMetadata() {
@@ -713,7 +724,7 @@ class Database {
           fields[field.name] = this._parseFieldType(field.type)
         }
         const schema = new Schema(fields)
-        const table = new Table(tableInfo.name, schema, this.dbDir)
+        const table = new Table(tableInfo.name, schema, this.dbDir, this.options)
         this.tables.set(tableInfo.name, table)
       }
     } catch (error) {
@@ -744,8 +755,8 @@ class Database {
   /**
    * Initialize database (load existing or create new)
    */
-  static async connect(name, dbDir = './data') {
-    const db = new Database(name, dbDir)
+  static async connect(name, dbDir = './data', options = {}) {
+    const db = new Database(name, dbDir, options)
     await db._loadMetadata()
     return db
   }

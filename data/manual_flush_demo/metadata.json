@@ -1,0 +1,22 @@
+{
+  "name": "manual_flush_demo",
+  "created": "2025-07-25T09:47:44.215Z",
+  "tables": [
+    {
+      "name": "messages",
+      "created": "2025-07-25T09:47:44.216Z",
+      "schema": [
+        {
+          "name": "id",
+          "type": "INT32",
+          "size": 4
+        },
+        {
+          "name": "message",
+          "type": "VARCHAR(100)",
+          "size": 100
+        }
+      ]
+    }
+  ]
+}

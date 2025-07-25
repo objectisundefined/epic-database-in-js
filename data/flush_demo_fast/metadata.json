@@ -1,0 +1,27 @@
+{
+  "name": "flush_demo_fast",
+  "created": "2025-07-25T09:47:44.204Z",
+  "tables": [
+    {
+      "name": "users",
+      "created": "2025-07-25T09:47:44.205Z",
+      "schema": [
+        {
+          "name": "id",
+          "type": "INT32",
+          "size": 4
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR(50)",
+          "size": 50
+        },
+        {
+          "name": "email",
+          "type": "VARCHAR(100)",
+          "size": 100
+        }
+      ]
+    }
+  ]
+}
