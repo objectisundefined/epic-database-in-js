@@ -203,9 +203,12 @@ const Deserialize = (buffer, pn, deserializeValFn, rowSize) => {
 const getMaxNodeSize = () => ~~((PageSize - layoutOffsetOf(NodeHeaderLayout, 'Size')) / layoutOffsetOf(NodeCellLayout, 'Key'))
 const getMaxLeafSize = (rowSize) => ~~((PageSize - layoutOffsetOf(LeafHeaderLayout, 'Next')) / layoutOffsetOf(getLeafCellLayout(rowSize), 'Value'))
 
-const connectDB = ((path) => {
+const connectDB = ((path, options = {}) => {
   /** @type { fs.FileHandle } */
   let fd
+  
+  // Default to immediate sync for data safety, can be disabled for performance
+  const immediateSync = options.immediateSync !== false
 
   return {
     open: async () => {
@@ -257,6 +260,11 @@ const connectDB = ((path) => {
       const r = await fd.write(buffer, 0, size, pn * PageSize)
 
       assert(r.bytesWritten === size, `wrote ${r.bytesWritten} bytes`)
+      
+      // Conditionally sync after write to prevent data loss
+      if (immediateSync) {
+        await fd.sync()
+      }
     },
     close: async () => {
       await fd.sync()

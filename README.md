@@ -12,6 +12,7 @@ A JavaScript implementation of a B-tree database that now supports **full table 
 - ✅ **Schema-Based Tables** - Each table has its own schema and validation
 - ✅ **Interactive Table REPL** - Dedicated interface for table operations
 - ✅ **Persistent Table Storage** - Tables and data persist across sessions
+- ✅ **Data Safety & Flushing** - Immediate sync to disk prevents data loss
 - ✅ **Performance Optimized** - Efficient operations on large datasets
 
 ### Quick Table Example
@@ -287,10 +288,39 @@ This project is based on the "Build Your Own Database" tutorial series:
 ├── tests/
 │   ├── table.test.js         # 🆕 Complete table system tests
 │   └── schema.test.js        # Schema system tests
+├── examples/
+│   └── flush-demo.js         # 🆕 File flushing demonstration
 ├── TABLES.md                 # 🆕 Complete table documentation
 ├── CUSTOM_SCHEMAS.md         # Schema documentation
+├── FLUSH_SAFETY.md           # 🆕 Data safety and flushing guide
 └── README.md                 # This file
 ```
+
+## Data Safety and Reliability
+
+This database includes robust **file flushing mechanisms** to prevent data loss:
+
+### Immediate Sync Mode (Default)
+```javascript
+// Safe mode - immediate sync to disk (default)
+const db = await Database.connect('mydb', './data')
+// Every write operation is immediately synced to prevent data loss
+```
+
+### Performance Mode
+```javascript
+// Fast mode - delayed sync for better performance
+const db = await Database.connect('mydb', './data', { immediateSync: false })
+// Higher performance but requires proper close() or manual flush()
+```
+
+### Key Benefits
+- 🛡️ **Crash Protection** - Data is immediately written to disk
+- ⚡ **Configurable Performance** - Choose between safety and speed
+- 🔧 **Manual Control** - Explicit flush operations when needed
+- 📋 **Best Practices** - Comprehensive documentation and examples
+
+See [`FLUSH_SAFETY.md`](FLUSH_SAFETY.md) for complete documentation and [`examples/flush-demo.js`](examples/flush-demo.js) for demonstrations.
 
 ## Contributing
 
