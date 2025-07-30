@@ -17,9 +17,12 @@
     "demo": "node examples-legacy/bplus-tree-demo.js",
     "demo:btree": "node examples-legacy/table-crud.js",
     "demo:bplus": "node examples-legacy/bplus-tree-demo.js",
+    "demo:optimized": "node examples-legacy/optimized-demo.js",
     "benchmark": "node examples-legacy/bplus-tree-demo.js",
+    "benchmark:performance": "node benchmarks/performance-comparison.js",
+    "benchmark:compare": "node benchmarks/performance-comparison.js",
     "docs": "echo 'Documentation available in docs/ directory'",
-    "clean": "rm -rf data/ test-data/ *.db",
+    "clean": "rm -rf data/ test-data/ *.db benchmark-data/",
     "install-global": "npm install -g .",
     "lint": "echo 'No linting configured'",
     "format": "echo 'No formatting configured'"
