@@ -1,0 +1,193 @@
+#!/usr/bin/env node
+
+/**
+ * Database Server CLI
+ * 
+ * Command-line interface for starting the socket-based database server.
+ */
+
+const path = require('path')
+const { DatabaseServer } = require('../lib/socket/index')
+
+// Parse command line arguments
+const args = process.argv.slice(2)
+const options = {
+  port: 3306,
+  host: 'localhost',
+  maxConnections: 100,
+  requireAuth: false,
+  dbDir: './data'
+}
+
+// Configuration
+let configFile = null
+let showHelp = false
+let showVersion = false
+
+// Parse arguments
+for (let i = 0; i < args.length; i++) {
+  const arg = args[i]
+  
+  switch (arg) {
+    case '--port':
+    case '-p':
+      options.port = parseInt(args[++i])
+      break
+      
+    case '--host':
+    case '-h':
+      options.host = args[++i]
+      break
+      
+    case '--max-connections':
+    case '-m':
+      options.maxConnections = parseInt(args[++i])
+      break
+      
+    case '--auth':
+    case '-a':
+      options.requireAuth = true
+      break
+      
+    case '--db-dir':
+    case '-d':
+      options.dbDir = args[++i]
+      break
+      
+    case '--config':
+    case '-c':
+      configFile = args[++i]
+      break
+      
+    case '--help':
+      showHelp = true
+      break
+      
+    case '--version':
+    case '-v':
+      showVersion = true
+      break
+      
+    default:
+      console.error(`Unknown option: ${arg}`)
+      process.exit(1)
+  }
+}
+
+// Show version
+if (showVersion) {
+  console.log('B+ Tree Database Server v2.0.0')
+  process.exit(0)
+}
+
+// Show help
+if (showHelp) {
+  console.log(`
+B+ Tree Database Server v2.0.0
+
+Usage: db-server [options]
+
+Options:
+  -p, --port <port>              Server port (default: 3306)
+  -h, --host <host>              Server host (default: localhost)
+  -m, --max-connections <num>    Maximum concurrent connections (default: 100)
+  -a, --auth                     Enable authentication
+  -d, --db-dir <path>            Database directory (default: ./data)
+  -c, --config <file>            Configuration file
+  -v, --version                  Show version
+  --help                         Show this help
+
+Examples:
+  db-server                      Start server with defaults
+  db-server -p 8080 -h 0.0.0.0   Start on port 8080, all interfaces
+  db-server --auth               Start with authentication enabled
+  db-server -d /var/db           Use custom database directory
+`)
+  process.exit(0)
+}
+
+// Load configuration file if specified
+if (configFile) {
+  try {
+    const config = require(path.resolve(configFile))
+    Object.assign(options, config)
+    console.log(`📄 Loaded configuration from: ${configFile}`)
+  } catch (err) {
+    console.error(`❌ Failed to load configuration file: ${err.message}`)
+    process.exit(1)
+  }
+}
+
+// Validate options
+if (isNaN(options.port) || options.port < 1 || options.port > 65535) {
+  console.error('❌ Invalid port number')
+  process.exit(1)
+}
+
+if (isNaN(options.maxConnections) || options.maxConnections < 1) {
+  console.error('❌ Invalid max connections')
+  process.exit(1)
+}
+
+// Create and start server
+async function startServer() {
+  console.log('🚀 Starting B+ Tree Database Server...')
+  console.log('')
+  
+  const server = new DatabaseServer(options)
+  
+  // Add default user if auth is enabled
+  if (options.requireAuth) {
+    server.addUser('admin', 'password')
+    console.log('🔐 Authentication enabled')
+    console.log('   Default credentials: admin/password')
+    console.log('   (Change these in production!)')
+    console.log('')
+  }
+  
+  // Handle graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('')
+    console.log('🛑 Shutting down server...')
+    await server.stop()
+    process.exit(0)
+  })
+  
+  process.on('SIGTERM', async () => {
+    console.log('')
+    console.log('🛑 Shutting down server...')
+    await server.stop()
+    process.exit(0)
+  })
+  
+  // Handle errors
+  server.on('error', (err) => {
+    console.error('❌ Server error:', err.message)
+    process.exit(1)
+  })
+  
+  try {
+    await server.start()
+    console.log('')
+    console.log('✅ Server started successfully!')
+    console.log(`   Connect using: node -e "const {DatabaseClient} = require('./lib'); const client = new DatabaseClient({port: ${options.port}}); client.connect();"`)
+    console.log('')
+    console.log('📊 Server Statistics:')
+    
+    // Show periodic stats
+    setInterval(() => {
+      const stats = server.getStats()
+      process.stdout.write(`\r   Connections: ${stats.connectedClients}/${stats.maxConnections} | Databases: ${stats.databases.length} | Sessions: ${stats.activeSessions}`)
+    }, 5000)
+    
+  } catch (err) {
+    console.error('❌ Failed to start server:', err.message)
+    process.exit(1)
+  }
+}
+
+// Start the server
+startServer().catch(err => {
+  console.error('❌ Unexpected error:', err)
+  process.exit(1)
+})
