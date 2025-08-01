@@ -6,11 +6,13 @@
   "type": "commonjs",
   "bin": {
     "db": "./bin/db",
+    "db-server": "./bin/db-server",
     "database-cli": "./cli/database-cli.js"
   },
   "scripts": {
     "start": "node cli/database-cli.js",
     "repl": "node cli/database-cli.js",
+    "server": "node bin/db-server",
     "test": "node test/bplus-tree.test.js && node test/schema.test.js",
     "test:btree": "node test/table.test.js",
     "test:bplus": "node test/bplus-tree.test.js",
@@ -18,6 +20,9 @@
     "demo:btree": "node examples-legacy/table-crud.js",
     "demo:bplus": "node examples-legacy/bplus-tree-demo.js",
     "demo:optimized": "node examples-legacy/optimized-demo.js",
+    "demo:socket": "node examples/socket-basic.js",
+    "demo:socket-auth": "node examples/socket-auth.js",
+    "demo:socket-perf": "node examples/socket-performance.js",
     "benchmark": "node examples-legacy/bplus-tree-demo.js",
     "benchmark:performance": "node benchmarks/performance-comparison.js",
     "benchmark:compare": "node benchmarks/performance-comparison.js",

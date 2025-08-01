@@ -22,6 +22,8 @@ npm start
 
 ### Basic Usage
 
+#### Local Database
+
 ```javascript
 const { Database, Schema, DataTypes } = require('./lib/index')
 
@@ -55,6 +57,51 @@ const recentUsers = await usersTable.read({
 await db.close()
 ```
 
+#### Socket Database (Remote)
+
+```javascript
+const { DatabaseClient, DataTypes } = require('./lib/index')
+
+// Start server (in separate process)
+// npm run server
+
+// Connect to remote database server
+const client = new DatabaseClient({
+  host: 'localhost',
+  port: 3306
+})
+
+await client.connect()
+
+// Use database
+const db = await client.useDatabase('my_database')
+
+// Create table (same API as local)
+await db.createTable('users', {
+  id: DataTypes.UINT32,
+  name: DataTypes.VARCHAR(100),
+  email: DataTypes.VARCHAR(150),
+  created_at: DataTypes.INT64
+})
+
+// Get table reference
+const usersTable = db.table('users')
+
+// Same operations as local database
+await usersTable.insert({
+  id: 1,
+  name: 'John Doe',
+  email: 'john@example.com',
+  created_at: Date.now()
+})
+
+// Range queries work the same
+const recentUsers = await usersTable.range('created_at', startDate, endDate)
+console.log(`Found ${recentUsers.length} recent users`)
+
+await client.disconnect()
+```
+
 ## 📁 Optimized File Structure
 
 The project has been reorganized for better maintainability and understanding:
@@ -71,13 +118,18 @@ bplus-tree-database/
 │   │   └── btree.js              # Original B-tree index
 │   ├── schema/                   # Schema and data types
 │   │   └── index.js              # Schema system
-│   └── storage/                  # Storage layer
-│       ├── storage.js            # Storage interface
-│       └── pager.js              # Page management
+│   ├── storage/                  # Storage layer
+│   │   ├── storage.js            # Storage interface
+│   │   └── pager.js              # Page management
+│   └── socket/                   # Socket protocol support
+│       ├── server.js             # Database server
+│       ├── client.js             # Database client
+│       └── protocol.js           # Socket protocol
 ├── cli/                          # Command-line interfaces
 │   └── database-cli.js           # Unified CLI for both index types
 ├── bin/                          # Executable scripts
-│   └── db                        # Database CLI executable
+│   ├── db                        # Database CLI executable
+│   └── db-server                 # Database server executable
 ├── docs/                         # Documentation
 │   ├── guides/                   # User guides and tutorials
 │   │   ├── README.md             # Original documentation
@@ -90,7 +142,11 @@ bplus-tree-database/
 │   ├── bplus-tree.test.js        # B+ tree tests
 │   ├── schema.test.js            # Schema tests
 │   └── table.test.js             # Original table tests
-├── examples-legacy/              # Example applications
+├── examples/                     # Socket examples
+│   ├── socket-basic.js           # Basic socket operations
+│   ├── socket-auth.js            # Authentication example
+│   └── socket-performance.js     # Performance demonstration
+├── examples-legacy/              # Legacy examples
 │   ├── bplus-tree-demo.js        # B+ tree demonstration
 │   ├── table-crud.js             # CRUD examples
 │   ├── custom-schemas.js         # Schema examples
