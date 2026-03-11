@@ -98,7 +98,7 @@ class Table {
 
     // Validate required fields and extract key
     const keyField = this._getPrimaryKey()
-    if (!data[keyField.name]) {
+    if (data[keyField.name] == null) {
       throw new Error(`Primary key '${keyField.name}' is required`)
     }
 

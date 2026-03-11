@@ -106,8 +106,9 @@ const SerializeLeaf = (node, buffer, serializeValFn) => {
     buffer.writeUInt32LE(node.keys[i], offset)
     offset = offset + 4 // Key size is always 4 bytes
 
-    buffer.set(serializeValFn(node.values[i]), offset) // buf
-    offset = offset + serializeValFn(node.values[i]).length // Dynamic value size
+    const serializedValue = serializeValFn(node.values[i])
+    buffer.set(serializedValue, offset)
+    offset = offset + serializedValue.length // Dynamic value size
   }
 
   return buffer

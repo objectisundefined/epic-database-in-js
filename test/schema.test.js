@@ -136,7 +136,11 @@ async function testDatabaseIntegration() {
   console.log('Testing database integration with custom schemas...')
   
   // Test with Product schema
-  const db = connectDB('./tests/test_products.db')
+  const fs = require('fs/promises')
+  const testDbPath = './test/test_products.db'
+  await fs.mkdir('./test', { recursive: true })
+  
+  const db = connectDB(testDbPath)
   await db.open()
   
   const pager = await createPager(db, {
@@ -150,6 +154,9 @@ async function testDatabaseIntegration() {
   console.log('✓ Database pager correctly uses custom schema row size')
   
   await db.close()
+  
+  // Cleanup
+  await fs.unlink(testDbPath).catch(() => {})
 }
 
 async function testUpdateOperation() {
