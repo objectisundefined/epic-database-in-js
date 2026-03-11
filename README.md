@@ -40,8 +40,9 @@ await db.close()
 Run the v1 test suite:
 
 ```bash
-npm test          # bplus-tree + schema tests
-npm run test:btree
+npm run test:v1           # bplus-tree + schema tests
+npm run test:v1:bplus     # bplus-tree only
+npm run test:v1:btree     # b-tree only
 ```
 
 → Full docs: [`v1/README.md`](v1/README.md)
@@ -96,9 +97,18 @@ npm run test:v2
 git clone https://github.com/objectisundefined/epic-database-in-js.git
 cd epic-database-in-js
 
-# Run all tests
-npm test              # v1
-npm run test:v2       # v2
+# Run all tests (v1 + v2)
+npm test
+
+# Run per-version suites
+npm run test:v1             # v1: bplus-tree + schema
+npm run test:v1:bplus       # v1: bplus-tree only
+npm run test:v1:btree       # v1: b-tree only
+npm run test:v2             # v2: all suites
+npm run test:v2:schema
+npm run test:v2:bplus
+npm run test:v2:table
+npm run test:v2:integration
 
 # Interactive CLI (v1)
 npm start

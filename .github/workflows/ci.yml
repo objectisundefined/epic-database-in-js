@@ -27,5 +27,8 @@ jobs:
       - name: Install dependencies
         run: npm install --ignore-scripts
 
-      - name: Run tests
-        run: npm test
+      - name: Run v1 tests
+        run: npm run test:v1
+
+      - name: Run v2 tests
+        run: npm run test:v2
