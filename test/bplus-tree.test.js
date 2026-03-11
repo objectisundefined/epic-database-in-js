@@ -396,14 +396,16 @@ async function performanceComparisonTest() {
   // Insert performance
   console.log('\n1. Insert Performance:')
   const insertCounts = [100, 500, 1000]
+  let idCounter = 1
   
   for (const count of insertCounts) {
     const startTime = performance.now()
     
-    for (let i = 1; i <= count; i++) {
+    for (let i = 0; i < count; i++) {
+      const id = idCounter++
       await table.create({
-        id: Date.now() + i, // Ensure unique IDs
-        name: `User${i}`,
+        id,
+        name: `User${id}`,
         value: Math.random() * 100
       })
     }
@@ -421,7 +423,7 @@ async function performanceComparisonTest() {
   const rangeSizes = [10, 50, 100, 200]
   
   for (const size of rangeSizes) {
-    const start = Math.floor(Math.random() * (currentCount - size))
+    const start = Math.floor(Math.random() * (currentCount - size)) + 1
     const end = start + size
     
     const startTime = performance.now()
