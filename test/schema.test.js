@@ -1,4 +1,5 @@
 const assert = require('assert')
+const fs = require('fs/promises')
 const { DataTypes, Schema, DefaultSchemas } = require('../src/schema')
 const { connectDB, createPager } = require('../src/persistent')
 
@@ -136,7 +137,6 @@ async function testDatabaseIntegration() {
   console.log('Testing database integration with custom schemas...')
   
   // Test with Product schema
-  const fs = require('fs/promises')
   const testDbPath = './test/test_products.db'
   await fs.mkdir('./test', { recursive: true })
   
